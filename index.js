@@ -299,6 +299,7 @@ app.post('/api/fetch-info', async (req, res) => {
 
         try {
             const meta = JSON.parse(stdout);
+            console.log(`DURATION DEBUG: meta.duration=${meta.duration} for ${url}`);
 
             if (type === 'audio') {
                 return res.json({
