@@ -271,7 +271,6 @@ app.post('/api/fetch-info', (req, res) => {
     const { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
 
-    // Anti-bot bypass flags added
     const command = `yt-dlp --dump-json --no-warnings --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
     
     exec(command, { maxBuffer: 1024 * 1024 * 15 }, (err, stdout) => {
@@ -315,12 +314,12 @@ app.post('/api/fetch-info', (req, res) => {
 
             // Video parsing core
             const qualityTiers = [
-                { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", refBitrate: 25000 },
-                { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", refBitrate: 12000 },
-                { maxH: 1440, minH: 1081, label: "1080p Full HD", refBitrate: 6000 },
-                { maxH: 1080, minH: 721,  label: "720p HD", refBitrate: 3000 },
-                { maxH: 720,  minH: 481,  label: "480p HQ", refBitrate: 1500 },
-                { maxH: 480,  minH: 0,    label: "360p Standard", refBitrate: 800 }
+                { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", refBitrate: 25000, fallbackSize: "~60-150 MB" },
+                { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", refBitrate: 12000, fallbackSize: "~40-80 MB" },
+                { maxH: 1440, minH: 1081, label: "1080p Full HD", refBitrate: 6000, fallbackSize: "~20-45 MB" },
+                { maxH: 1080, minH: 721,  label: "720p HD", refBitrate: 3000, fallbackSize: "~10-25 MB" },
+                { maxH: 720,  minH: 481,  label: "480p HQ", refBitrate: 1500, fallbackSize: "~5-12 MB" },
+                { maxH: 480,  minH: 0,    label: "360p Standard", refBitrate: 800, fallbackSize: "~2-6 MB" }
             ];
             
             let availableOptions = [];
@@ -344,7 +343,7 @@ app.post('/api/fetch-info', (req, res) => {
                     } else if (duration > 0) {
                         sizeLabel = `~${((tier.refBitrate * duration) / 8 / 1024).toFixed(1)} MB`;
                     } else {
-                        sizeLabel = tier.maxH === 1080 ? "~15-30 MB" : "~8-15 MB";
+                        sizeLabel = tier.fallbackSize;
                     }
 
                     const formatSelector = bestStream 
