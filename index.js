@@ -163,34 +163,39 @@ app.get('/', (req, res) => {
     `);
 });
 
-// --- BACKEND ROUTE (PROXIED - NO CORS OR BRAVE SHIELD ISSUES) ---
+// --- BACKEND ROUTE ---
 app.post('/api/fetch-info', async (req, res) => {
     const { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL empty hai." });
 
+    console.log(`[PROCESS] URL: ${url} | Type: ${type}`);
+
     try {
-        // 1. TikTok Engine (TikWM)
+        // 1. TikTok Handler (TikWM)
         if (url.includes('tiktok.com')) {
-            const tikRes = await fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(url));
-            const tikData = await tikRes.json();
-            if (tikData && tikData.data) {
-                const isAudio = type === 'audio';
-                return res.json({
-                    success: true,
-                    title: tikData.data.title || "TikTok Media",
-                    thumbnail: tikData.data.cover || "",
-                    downloadUrl: isAudio ? (tikData.data.music || tikData.data.play) : (tikData.data.hdplay || tikData.data.play)
-                });
-            }
+            try {
+                const tikRes = await fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(url));
+                const tikData = await tikRes.json();
+                if (tikData && tikData.data) {
+                    const isAudio = type === 'audio';
+                    return res.json({
+                        success: true,
+                        title: tikData.data.title || "TikTok Media",
+                        thumbnail: tikData.data.cover || "",
+                        downloadUrl: isAudio ? (tikData.data.music || tikData.data.play) : (tikData.data.hdplay || tikData.data.play)
+                    });
+                }
+            } catch(e) { console.error("TikWM Error:", e.message); }
         }
 
-        // 2. Cobalt API Engine (YouTube / Insta / TikTok)
+        // 2. Cobalt API Engine
         try {
             const cobaltRes = await fetch('https://api.cobalt.tools/', {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
                 },
                 body: JSON.stringify({
                     url: url,
@@ -200,12 +205,14 @@ app.post('/api/fetch-info', async (req, res) => {
             });
 
             const cobaltData = await cobaltRes.json();
+            console.log("[COBALT RESPONSE]:", cobaltData);
 
-            if (cobaltData && (cobaltData.url || cobaltData.picker)) {
+            if (cobaltData) {
                 let dlUrl = cobaltData.url;
                 if (!dlUrl && cobaltData.picker && cobaltData.picker.length > 0) {
                     dlUrl = cobaltData.picker[0].url;
                 }
+                
                 if (dlUrl) {
                     return res.json({
                         success: true,
@@ -215,7 +222,7 @@ app.post('/api/fetch-info', async (req, res) => {
                     });
                 }
             }
-        } catch(e) {}
+        } catch(e) { console.error("Cobalt Error:", e.message); }
 
         // 3. YouTube Fallback Engine (Piped Nodes)
         const getYTId = (u) => {
@@ -229,7 +236,8 @@ app.post('/api/fetch-info', async (req, res) => {
                 'https://pipedapi.kavin.rocks',
                 'https://api.piped.private.coffee',
                 'https://pipedapi.mha.fi',
-                'https://pipedapi.adminforge.de'
+                'https://pipedapi.adminforge.de',
+                'https://piped-api.garudalinux.org'
             ];
 
             for (let node of pipedNodes) {
@@ -262,7 +270,7 @@ app.post('/api/fetch-info', async (req, res) => {
             }
         }
 
-        return res.json({ success: false, message: "Stream link parse nahi ho saka. Dobara try karein." });
+        return res.json({ success: false, message: "Is link ki stream extract nahi ho saki. Dusri video ka link try karein." });
 
     } catch (err) {
         return res.json({ success: false, message: "Backend error: " + err.message });
