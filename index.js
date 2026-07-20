@@ -51,19 +51,19 @@ app.get('/', (req, res) => {
             label { display: block; text-align: left; font-weight: bold; margin-bottom: 8px; color: #8b949e; font-size: 14px; text-transform: uppercase; }
             input[type="text"] { width: 100%; padding: 14px; margin-bottom: 20px; border: 1px solid #30363d; background: #0d1117; color: #fff; border-radius: 8px; box-sizing: border-box; font-size: 15px; }
             input[type="text"]:focus { border-color: #00f2fe; outline: none; box-shadow: 0 0 8px rgba(0, 242, 254, 0.5); }
-            
+
             button { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-bottom: 15px; text-transform: uppercase; }
             .btn-fetch { background: linear-gradient(45deg, #00f2fe, #4facfe); color: #000; }
             .btn-audio-fetch { background: linear-gradient(45deg, #ff007f, #7f00ff); color: #fff; }
             .btn-download { background: linear-gradient(45deg, #00ff87, #60efff); color: #000; margin-top: 10px; }
             button:hover { transform: scale(1.02); opacity: 0.9; }
-            
+
             .status { background: #21262d; border-left: 4px solid #00f2fe; padding: 15px; text-align: left; border-radius: 4px; font-size: 14px; display: none; margin-top: 15px; line-height: 1.5; word-break: break-word; }
-            
+
             .preview-card { background: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-top: 20px; display: none; text-align: left; }
             .preview-card img { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid #444; display: block; max-height: 300px; object-fit: cover; }
             .preview-title { font-weight: bold; font-size: 16px; color: #fff; margin-bottom: 15px; line-height: 1.4; background: #21262d; padding: 10px; border-radius: 6px; border-left: 3px solid #ffbc00; }
-            
+
             .quality-select { width: 100%; padding: 12px; background: #161b22; color: #fff; border: 1px solid #00f2fe; border-radius: 8px; font-size: 15px; margin-bottom: 10px; outline: none; }
             .tabs { display: flex; justify-content: space-around; margin-bottom: 20px; border-bottom: 1px solid #30363d; }
             .tab { padding: 10px 20px; cursor: pointer; color: #8b949e; font-weight: bold; }
@@ -76,7 +76,7 @@ app.get('/', (req, res) => {
         <div class="container">
             <h1>AMSAL STUDIOS</h1>
             <div class="badge">PREMIUM CORE WORKSTATION</div>
-            
+
             <div class="tabs">
                 <div class="tab active" onclick="switchTab('video-sec', this)">Video Engine</div>
                 <div class="tab" onclick="switchTab('audio-sec', this)">Audio Engine</div>
@@ -137,11 +137,11 @@ app.get('/', (req, res) => {
                 currentVideoUrl = url;
                 const statusPanel = document.getElementById('download-status');
                 const previewCard = document.getElementById('previewCard');
-                
+
                 previewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
                 statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Parsing original qualities & real live sizes...";
-                
+
                 try {
                     const response = await fetch('/api/fetch-info', {
                         method: 'POST',
@@ -149,7 +149,7 @@ app.get('/', (req, res) => {
                         body: JSON.stringify({ url, type: 'video' })
                     });
                     const data = await response.json();
-                    
+
                     if(data.success) {
                         statusPanel.style.display = 'none';
                         document.getElementById('videoTitle').innerHTML = "🎬 <b>Title:</b> " + data.title;
@@ -159,17 +159,17 @@ app.get('/', (req, res) => {
                         } else {
                             document.getElementById('videoThumb').style.display = 'none';
                         }
-                        
+
                         const dropdown = document.getElementById('qualityDropdown');
                         dropdown.innerHTML = "";
-                        
+
                         data.formats.forEach(f => {
                             const option = document.createElement('option');
                             option.value = f.id;
                             option.innerText = f.label;
                             dropdown.appendChild(option);
                         });
-                        
+
                         previewCard.style.display = 'block';
                     } else {
                         statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> " + data.message;
@@ -182,10 +182,10 @@ app.get('/', (req, res) => {
             document.getElementById('startDownloadBtn').addEventListener('click', async () => {
                 const formatId = document.getElementById('qualityDropdown').value;
                 const statusPanel = document.getElementById('download-status');
-                
+
                 statusPanel.style.display = 'block';
                 statusPanel.innerHTML = "💎 <b>[Processing]:</b> Merging exact selected stream quality with audio...";
-                
+
                 try {
                     const response = await fetch('/api/prepare-video', {
                         method: 'POST',
@@ -210,11 +210,11 @@ app.get('/', (req, res) => {
                 currentAudioUrl = url;
                 const statusPanel = document.getElementById('download-status');
                 const audioPreviewCard = document.getElementById('audioPreviewCard');
-                
+
                 audioPreviewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
                 statusPanel.innerHTML = "🎵 <b>[Audio Analyzer]:</b> Extracting soundtrack details...";
-                
+
                 try {
                     const response = await fetch('/api/fetch-info', {
                         method: 'POST',
@@ -222,7 +222,7 @@ app.get('/', (req, res) => {
                         body: JSON.stringify({ url, type: 'audio' })
                     });
                     const data = await response.json();
-                    
+
                     if(data.success) {
                         statusPanel.style.display = 'none';
                         document.getElementById('audioTitle').innerHTML = "🎵 <b>Audio Title:</b> " + data.title;
@@ -232,17 +232,17 @@ app.get('/', (req, res) => {
                         } else {
                             document.getElementById('audioThumb').style.display = 'none';
                         }
-                        
+
                         const dropdown = document.getElementById('audioQualityDropdown');
                         dropdown.innerHTML = "";
-                        
+
                         data.formats.forEach(f => {
                             const option = document.createElement('option');
                             option.value = f.id;
                             option.innerText = f.label;
                             dropdown.appendChild(option);
                         });
-                        
+
                         audioPreviewCard.style.display = 'block';
                     } else {
                         statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> " + data.message;
@@ -255,10 +255,10 @@ app.get('/', (req, res) => {
             document.getElementById('startAudioDownloadBtn').addEventListener('click', async () => {
                 const quality = document.getElementById('audioQualityDropdown').value;
                 const statusPanel = document.getElementById('download-status');
-                
+
                 statusPanel.style.display = 'block';
                 statusPanel.innerHTML = "🎛️ <b>[Master Studio Engine]:</b> Transcoding audio stream...";
-                
+
                 try {
                     const response = await fetch('/api/prepare-audio', {
                         method: 'POST',
@@ -288,13 +288,18 @@ app.post('/api/fetch-info', async (req, res) => {
     if (!url) return res.json({ success: false, message: "URL is empty." });
 
     const command = `yt-dlp --dump-json --no-warnings --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
-    
-    exec(command, { maxBuffer: 1024 * 1024 * 50 }, async (err, stdout) => {
-        if (err) return res.json({ success: false, message: "Could not parse link." });
-        
+
+    exec(command, { maxBuffer: 1024 * 1024 * 50 }, async (err, stdout, stderr) => {
+        if (err) {
+            console.error("=== FETCH-INFO FAILED ===");
+            console.error("URL:", url);
+            console.error("STDERR:", stderr);
+            return res.json({ success: false, message: "Could not parse link." });
+        }
+
         try {
             const meta = JSON.parse(stdout);
-            
+
             if (type === 'audio') {
                 return res.json({
                     success: true,
@@ -309,19 +314,19 @@ app.post('/api/fetch-info', async (req, res) => {
             if (meta.formats && Array.isArray(meta.formats)) {
                 let seenResolutions = new Set();
                 const targetFormats = meta.formats.slice().reverse();
-                
+
                 for (let f of targetFormats) {
                     if (f.vcodec !== 'none') {
                         let resLabel = f.height ? `${f.height}p` : (f.format_note || 'HQ');
-                        
+
                         if (!seenResolutions.has(resLabel)) {
                             seenResolutions.add(resLabel);
-                            
+
                             let finalBytes = f.filesize || f.filesize_approx || 0;
                             if (!finalBytes && f.url) {
                                 finalBytes = await getRemoteSize(f.url);
                             }
-                            
+
                             let sizeStr = 'Original Size';
                             if (finalBytes > 0) {
                                 sizeStr = `${(finalBytes / (1024 * 1024)).toFixed(2)} MB`;
@@ -338,19 +343,22 @@ app.post('/api/fetch-info', async (req, res) => {
                 }
             }
 
+            console.log(`fetch-info: found ${formatsList.length} distinct video formats for`, url);
+
             formatsList.unshift({
                 id: "bestvideo+bestaudio/best",
                 label: "🌟 Absolute Highest Combined Stream (Uncompressed)"
             });
 
-            res.json({ 
-                success: true, 
-                title: meta.title || "External Video Stream", 
-                thumbnail: meta.thumbnail || "", 
-                formats: formatsList 
+            res.json({
+                success: true,
+                title: meta.title || "External Video Stream",
+                thumbnail: meta.thumbnail || "",
+                formats: formatsList
             });
 
         } catch (e) {
+            console.error("=== FETCH-INFO PARSE ERROR ===", e.message);
             res.json({ success: false, message: "Engine compilation structural error." });
         }
     });
@@ -364,7 +372,7 @@ app.post('/api/prepare-video', (req, res) => {
     const uniqueId = Date.now();
     const outputFilename = `video_${uniqueId}.mp4`;
     const outputPath = path.join(TMP_DIR, outputFilename);
-    
+
     // Construct strict target format without falling back silently
     let targetFormat = formatId || "best";
     if (targetFormat !== "best" && targetFormat !== "bestvideo+bestaudio/best") {
@@ -373,13 +381,26 @@ app.post('/api/prepare-video', (req, res) => {
 
     const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${targetFormat}" --merge-output-format mp4 "${url}" -o "${outputPath}"`;
 
-    exec(command, { maxBuffer: 1024 * 1024 * 300 }, (err) => {
+    console.log("=== PREPARE-VIDEO START ===");
+    console.log("Requested formatId:", formatId, "-> targetFormat:", targetFormat);
+    console.log("Command:", command);
+
+    exec(command, { maxBuffer: 1024 * 1024 * 300 }, (err, stdout, stderr) => {
         if (err || !fs.existsSync(outputPath)) {
-            return res.json({ 
-                success: false, 
-                message: "Download failed. Make sure 'ffmpeg' is installed in Termux (`pkg install ffmpeg`). Error details: " + (err ? err.message : 'File missing') 
+            console.error("=== PREPARE-VIDEO FAILED ===");
+            console.error("STDERR:", stderr);
+            console.error("STDOUT:", stdout);
+            return res.json({
+                success: false,
+                message: "Download failed. Make sure 'ffmpeg' is installed in Termux (`pkg install ffmpeg`). Error details: " + (err ? err.message : 'File missing')
             });
         }
+
+        // Log actual downloaded file size + which format yt-dlp actually picked
+        const stats = fs.statSync(outputPath);
+        console.log(`PREPARE-VIDEO SUCCESS: ${outputFilename} -> ${(stats.size / (1024*1024)).toFixed(2)} MB`);
+        console.log("yt-dlp STDOUT tail:", stdout ? stdout.slice(-800) : "(empty)");
+
         res.json({ success: true, filename: outputFilename });
     });
 });
@@ -393,8 +414,10 @@ app.post('/api/prepare-audio', (req, res) => {
     const outputPath = path.join(TMP_DIR, outputFilename);
     const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -x --audio-format mp3 "${url}" -o "${outputPath}"`;
 
-    exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err) => {
+    exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
         if (err || !fs.existsSync(outputPath)) {
+            console.error("=== PREPARE-AUDIO FAILED ===");
+            console.error("STDERR:", stderr);
             return res.json({ success: false, message: "Audio extraction failed." });
         }
         res.json({ success: true, filename: outputFilename });
