@@ -39,7 +39,7 @@ app.get('/', (req, res) => {
             .btn-download { background: linear-gradient(45deg, #00ff87, #60efff); color: #000; margin-top: 10px; }
             button:hover { transform: scale(1.02); opacity: 0.9; }
             
-            .status { background: #21262d; border-left: 4px solid #00f2fe; padding: 15px; text-align: left; border-radius: 4px; font-size: 14px; display: none; margin-top: 15px; line-height: 1.5; }
+            .status { background: #21262d; border-left: 4px solid #00f2fe; padding: 15px; text-align: left; border-radius: 4px; font-size: 14px; display: none; margin-top: 15px; line-height: 1.5; word-break: break-word; }
             
             .preview-card { background: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-top: 20px; display: none; text-align: left; }
             .preview-card img { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid #444; display: block; max-height: 300px; object-fit: cover; }
@@ -167,7 +167,7 @@ app.get('/', (req, res) => {
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "💎 <b>[Processing Core]:</b> Syncing selected high-bitrate stream...";
+                statusPanel.innerHTML = "💎 <b>[Processing Core]:</b> Syncing selected high-bitrate stream & merging audio/video...";
                 
                 try {
                     const response = await fetch('/api/prepare-video', {
@@ -346,9 +346,10 @@ app.post('/api/fetch-info', (req, res) => {
                         sizeLabel = tier.fallbackSize;
                     }
 
+                    // Flexible format selector with fallbacks
                     const formatSelector = bestStream 
-                        ? `bestvideo[format_id=${bestStream.format_id}]+bestaudio/bestvideo[height<=${tier.maxH}]+bestaudio`
-                        : `bestvideo[height<=${tier.maxH}]+bestaudio/best`;
+                        ? `bestvideo[format_id=${bestStream.format_id}]+bestaudio/bestvideo[height<=${tier.maxH}]+bestaudio/best[height<=${tier.maxH}]/best`
+                        : `bestvideo[height<=${tier.maxH}]+bestaudio/best[height<=${tier.maxH}]/best`;
 
                     availableOptions.push({ id: formatSelector, label: `${tier.label} [${sizeLabel}]`, disabled: false });
                 } else {
@@ -373,11 +374,23 @@ app.post('/api/prepare-video', (req, res) => {
 
     const outputFilename = `video_${Date.now()}.mp4`;
     const outputPath = path.join(TMP_DIR, outputFilename);
-    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatId}" --recode-video mp4 "${url}" -o "${outputPath}"`;
+    
+    // Explicit ffmpeg path, merge video format mp4, and fallback handling
+    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatId}" --merge-output-format mp4 --ffmpeg-location /usr/bin/ffmpeg "${url}" -o "${outputPath}"`;
 
-    exec(command, { maxBuffer: 1024 * 1024 * 50 }, (err) => {
+    exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
         if (err) {
-            return res.json({ success: false, message: "Video processing failed on server." });
+            console.error("YTDLP Error:", stderr || err.message);
+            // Fallback command if merging fails
+            const fallbackCommand = `yt-dlp --no-check-certificates -f "best" "${url}" -o "${outputPath}"`;
+            
+            exec(fallbackCommand, { maxBuffer: 1024 * 1024 * 100 }, (fErr) => {
+                if(fErr) {
+                    return res.json({ success: false, message: "Processing failed: " + (stderr ? stderr.substring(0, 100) : "Download Error") });
+                }
+                res.json({ success: true, filename: outputFilename });
+            });
+            return;
         }
         res.json({ success: true, filename: outputFilename });
     });
@@ -391,11 +404,11 @@ app.post('/api/prepare-audio', (req, res) => {
     const bitrate = quality ? quality.replace('K', 'k') : '320k';
     const outputFilename = `audio_${Date.now()}.mp3`;
     const outputPath = path.join(TMP_DIR, outputFilename);
-    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -x --audio-format mp3 --audio-quality ${bitrate} "${url}" -o "${outputPath}"`;
+    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -x --audio-format mp3 --audio-quality ${bitrate} --ffmpeg-location /usr/bin/ffmpeg "${url}" -o "${outputPath}"`;
 
-    exec(command, { maxBuffer: 1024 * 1024 * 50 }, (err) => {
+    exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
         if (err) {
-            return res.json({ success: false, message: "Audio processing failed on server." });
+            return res.json({ success: false, message: "Audio processing failed: " + (stderr ? stderr.substring(0, 100) : "Extract Error") });
         }
         res.json({ success: true, filename: outputFilename });
     });
