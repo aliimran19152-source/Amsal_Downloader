@@ -3,6 +3,7 @@ const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
+const ffmpegPath = require('ffmpeg-static');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,7 +32,7 @@ function formatBytes(bytes) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-// --- ROUTE 1: GUARANTEED MB DISPLAY FOR ALL QUALITIES ---
+// --- ROUTE 1: VIDEO / AUDIO METADATA FETCH ---
 app.post('/api/fetch-info', (req, res) => {
     const { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
@@ -44,13 +45,16 @@ app.post('/api/fetch-info', (req, res) => {
         try {
             const meta = JSON.parse(stdout);
             const rawFormats = meta.formats || [];
-            const duration = meta.duration || 30; // Default fallback duration for reels
+            const duration = meta.duration || 180; // Default ~3 min fallback if duration missing
 
             if (type === 'audio') {
+                // Find actual audio streams if available
+                const audioFormats = rawFormats.filter(f => f.vcodec === 'none' && f.acodec !== 'none');
+                
                 const audioTiers = [
-                    { id: "320K", label: "Studio Master (320kbps MP3)", bitrate: 320, defaultMb: 6.5 },
-                    { id: "256K", label: "High Quality (256kbps MP3)", bitrate: 256, defaultMb: 5.0 },
-                    { id: "128K", label: "Standard Quality (128kbps MP3)", bitrate: 128, defaultMb: 2.8 }
+                    { id: "320K", label: "Studio Master (320kbps MP3)", bitrate: 320, defaultMb: 7.2 },
+                    { id: "256K", label: "High Quality (256kbps MP3)", bitrate: 256, defaultMb: 5.8 },
+                    { id: "128K", label: "Standard Quality (128kbps MP3)", bitrate: 128, defaultMb: 2.9 }
                 ];
                 
                 let availableAudio = audioTiers.map(tier => {
@@ -67,6 +71,7 @@ app.post('/api/fetch-info', (req, res) => {
                 });
             }
 
+            // --- VIDEO LOGIC ---
             const qualityTiers = [
                 { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", refBitrate: 25000, defaultMb: 85.0 },
                 { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", refBitrate: 12000, defaultMb: 45.0 },
@@ -88,16 +93,13 @@ app.post('/api/fetch-info', (req, res) => {
                     validStreams.sort((a, b) => (b.tbr || 0) - (a.tbr || 0));
                     const bestStream = validStreams[0];
 
-                    // Priority 1: Real Stream Filesize
                     let realBytes = bestStream ? (bestStream.filesize || bestStream.filesize_approx || 0) : 0;
                     let sizeStr = formatBytes(realBytes);
 
-                    // Priority 2: Calculated Duration-based Size
                     if (!sizeStr && duration > 0) {
                         sizeStr = formatBytes((tier.refBitrate * 1000 * duration) / 8);
                     }
 
-                    // Priority 3: Smart Resolution Fallback
                     if (!sizeStr) {
                         sizeStr = `${tier.defaultMb} MB`;
                     }
@@ -126,23 +128,25 @@ app.post('/api/prepare-video', (req, res) => {
     if (!url || !formatId || formatId === "disabled") return res.json({ success: false, message: "Invalid parameters." });
 
     const outputPath = path.join(TMP_DIR, `video_${Date.now()}.mp4`);
-    const cmd = `${YTDLP} -f "${formatId}" -o "${outputPath}" "${url}"`;
+    const ffmpegOption = ffmpegPath ? `--ffmpeg-location "${ffmpegPath}"` : '';
+    const cmd = `${YTDLP} ${ffmpegOption} -f "${formatId}" -o "${outputPath}" "${url}"`;
 
-    exec(cmd, (err) => {
+    exec(cmd, { maxBuffer: 1024 * 1024 * 25 }, (err) => {
         if (err) return res.json({ success: false, message: "Download failed." });
         res.json({ success: true, filename: path.basename(outputPath) });
     });
 });
 
-// --- ROUTE 3: PREPARE AUDIO ---
+// --- ROUTE 3: PREPARE AUDIO (FIXED WITH FFMPEG BINARY) ---
 app.post('/api/prepare-audio', (req, res) => {
     const { url, quality } = req.body;
     if (!url) return res.json({ success: false, message: "Invalid URL." });
 
     const outputPath = path.join(TMP_DIR, `audio_${Date.now()}.mp3`);
-    const cmd = `${YTDLP} -x --audio-format mp3 --audio-quality ${quality} -o "${outputPath}" "${url}"`;
+    const ffmpegOption = ffmpegPath ? `--ffmpeg-location "${ffmpegPath}"` : '';
+    const cmd = `${YTDLP} ${ffmpegOption} -x --audio-format mp3 --audio-quality ${quality || '128K'} -o "${outputPath}" "${url}"`;
 
-    exec(cmd, (err) => {
+    exec(cmd, { maxBuffer: 1024 * 1024 * 25 }, (err) => {
         if (err) return res.json({ success: false, message: "Audio extraction failed." });
         res.json({ success: true, filename: path.basename(outputPath) });
     });
