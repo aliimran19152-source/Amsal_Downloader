@@ -13,6 +13,19 @@ if (!fs.existsSync(TMP_DIR)) {
     fs.mkdirSync(TMP_DIR, { recursive: true });
 }
 
+// --- COOKIES SETUP (for Instagram authenticated requests) ---
+const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
+if (process.env.INSTAGRAM_COOKIES_B64) {
+    try {
+        const decoded = Buffer.from(process.env.INSTAGRAM_COOKIES_B64, 'base64').toString('utf-8');
+        fs.writeFileSync(COOKIES_PATH, decoded);
+        console.log("Cookies file written successfully from env var.");
+    } catch (e) {
+        console.error("Failed to write cookies file:", e.message);
+    }
+}
+const COOKIES_FLAG = fs.existsSync(COOKIES_PATH) ? `--cookies "${COOKIES_PATH}"` : "";
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -287,7 +300,7 @@ app.post('/api/fetch-info', async (req, res) => {
     const { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
 
-    const command = `yt-dlp --dump-json --no-warnings --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
+    const command = `yt-dlp --dump-json --no-warnings --no-check-certificates ${COOKIES_FLAG} --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 50 }, async (err, stdout, stderr) => {
         if (err) {
@@ -338,7 +351,7 @@ app.post('/api/fetch-info', async (req, res) => {
                             console.log(`FORMAT DEBUG: height=${f.height} format_id=${f.format_id} filesize=${f.filesize} tbr=${f.tbr}`);
 
                             formatsList.push({
-                                id: f.format_id,
+                                id: f.height ? `height:${f.height}` : f.format_id,
                                 label: `🎬 Quality: ${resLabel} | Exact Size: ${sizeStr}`
                             });
                         }
@@ -397,13 +410,22 @@ app.post('/api/prepare-video', (req, res) => {
     const outputFilename = `video_${uniqueId}.mp4`;
     const outputPath = path.join(TMP_DIR, outputFilename);
 
-    // Construct strict target format without falling back silently
+    // IMPORTANT: Instagram's format_ids are session/token-based and expire quickly.
+    // By the time the user clicks Download, a NEW yt-dlp extraction happens with
+    // DIFFERENT format_ids than what fetch-info showed. Using the old exact ID
+    // silently fails and falls back to a generic low-quality "best".
+    // Fix: use height-based selectors which match against whatever formats
+    // are live at download time, instead of a specific (likely stale) ID.
     let targetFormat = formatId || "best";
-    if (targetFormat !== "best" && targetFormat !== "bestvideo+bestaudio/best") {
+    if (targetFormat.startsWith("height:")) {
+        const h = targetFormat.split(":")[1];
+        targetFormat = `bestvideo[height<=${h}]+bestaudio/best`;
+    } else if (targetFormat !== "best" && targetFormat !== "bestvideo+bestaudio/best") {
+        // Legacy exact-ID path kept as fallback, but prefer height selectors going forward
         targetFormat = `${targetFormat}+bestaudio/best`;
     }
 
-    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${targetFormat}" --merge-output-format mp4 "${url}" -o "${outputPath}"`;
+    const command = `yt-dlp -f "${targetFormat}" --merge-output-format mp4 --no-check-certificate ${COOKIES_FLAG} "${url}" -o "${outputPath}"`;
 
     console.log("=== PREPARE-VIDEO START ===");
     console.log("Requested formatId:", formatId, "-> targetFormat:", targetFormat);
@@ -444,7 +466,7 @@ app.post('/api/prepare-audio', (req, res) => {
 
     const outputFilename = `audio_${Date.now()}.mp3`;
     const outputPath = path.join(TMP_DIR, outputFilename);
-    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -x --audio-format mp3 "${url}" -o "${outputPath}"`;
+    const command = `yt-dlp --no-check-certificates ${COOKIES_FLAG} --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -x --audio-format mp3 "${url}" -o "${outputPath}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
         if (err || !fs.existsSync(outputPath)) {
