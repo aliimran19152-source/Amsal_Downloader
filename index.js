@@ -2,7 +2,6 @@ const express = require('express');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,12 +24,7 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-function formatBytes(bytes) {
-    if (!bytes || isNaN(bytes) || bytes === 0) return null;
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-}
-
-// URL Cleaner to fix youtu.be & tracking parameters (?si=...)
+// Clean URLs (Short links like youtu.be & tracking queries like ?si=)
 function cleanUrl(rawUrl) {
     if (!rawUrl) return '';
     let clean = rawUrl.trim();
@@ -45,133 +39,119 @@ function cleanUrl(rawUrl) {
     return clean.split('?si=')[0];
 }
 
-// Anti-bot flags for Cloud Servers (Render)
-const YT_FLAGS = '--extractor-args "youtube:player_client=ios,mweb,android" --no-check-certificate --no-warnings --user-agent "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15"';
+const ENGINE_FLAGS = '--no-check-certificate --no-warnings --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"';
 
-// --- ROUTE 1: FETCH METADATA ---
+// --- ROUTE: COMMON METADATA FETCH & SIZING ENGINE ---
 app.post('/api/fetch-info', (req, res) => {
-    let { url, type, engine } = req.body;
+    let { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
 
     const targetUrl = cleanUrl(url);
-    const isAudio = (type === 'audio' || engine === 'audio');
-    const command = `${YTDLP} ${YT_FLAGS} --dump-json "${targetUrl}"`;
+    const command = `${YTDLP} ${ENGINE_FLAGS} --dump-json "${targetUrl}"`;
     
-    exec(command, { maxBuffer: 1024 * 1024 * 35 }, (err, stdout) => {
-        if (err || !stdout) {
-            // Direct Stream Retry for Strict Links
-            const retryCmd = `${YTDLP} --no-check-certificate --dump-json "${targetUrl}"`;
-            exec(retryCmd, { maxBuffer: 1024 * 1024 * 35 }, (rErr, rStdout) => {
-                if (rErr || !rStdout) {
-                    return res.json({ success: false, message: "Link parse nahi ho saka. Link public aur valid hona chahiye." });
-                }
-                processMetadata(rStdout, isAudio, res);
+    exec(command, { maxBuffer: 1024 * 1024 * 25 }, (err, stdout) => {
+        if (err || !stdout) return res.json({ success: false, message: "Could not parse link or unsupported site." });
+        
+        try {
+            const meta = JSON.parse(stdout);
+            const rawFormats = meta.formats || [];
+            const duration = meta.duration || 0;
+            
+            if (type === 'audio') {
+                const audioTiers = [
+                    { id: "320K", label: "Studio Master (320kbps MP3)", bitrate: 320 },
+                    { id: "256K", label: "High Quality (256kbps MP3)", bitrate: 256 },
+                    { id: "128K", label: "Standard Quality (128kbps MP3)", bitrate: 128 }
+                ];
+                
+                let availableAudio = [];
+                audioTiers.forEach(tier => {
+                    let sizeLabel = "Unknown Size";
+                    if (duration > 0) {
+                        const estimatedMB = ((tier.bitrate * duration) / 8 / 1024).toFixed(1);
+                        sizeLabel = `~${estimatedMB} MB`;
+                    } else {
+                        sizeLabel = tier.id === "320K" ? "~5-12 MB" : "~2-6 MB";
+                    }
+                    
+                    availableAudio.push({
+                        id: tier.id,
+                        label: `${tier.label} [${sizeLabel}]`
+                    });
+                });
+
+                return res.json({
+                    success: true,
+                    title: meta.title || "Extracted Audio Track",
+                    thumbnail: meta.thumbnail || "",
+                    formats: availableAudio
+                });
+            }
+
+            // Video parsing core fallback 
+            const qualityTiers = [
+                { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", refBitrate: 25000 },
+                { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", refBitrate: 12000 },
+                { maxH: 1440, minH: 1081, label: "1080p Full HD", refBitrate: 6000 },
+                { maxH: 1080, minH: 721,  label: "720p HD", refBitrate: 3000 },
+                { maxH: 720,  minH: 481,  label: "480p HQ", refBitrate: 1500 },
+                { maxH: 480,  minH: 0,    label: "360p Standard", refBitrate: 800 }
+            ];
+            
+            let availableOptions = [];
+            let maxFoundHeight = 0;
+            rawFormats.forEach(f => {
+                if (f.height > maxFoundHeight) maxFoundHeight = f.height;
             });
-            return;
+            if (maxFoundHeight === 0 && rawFormats.length > 0) maxFoundHeight = meta.height || 720;
+
+            qualityTiers.forEach(tier => {
+                const hasStream = rawFormats.some(f => f.height > tier.minH && f.height <= tier.maxH) || (tier.maxH === 720 && maxFoundHeight >= 720);
+                if (hasStream && tier.maxH <= (maxFoundHeight + 100)) {
+                    const validStreams = rawFormats.filter(f => f.height > tier.minH && f.height <= tier.maxH);
+                    validStreams.sort((a, b) => (b.tbr || b.filesize || 0) - (a.tbr || a.filesize || 0));
+                    const bestStream = validStreams[0];
+                    let sizeLabel = "";
+                    let bytes = bestStream ? (bestStream.filesize || bestStream.filesize_approx) : null;
+                    
+                    if (bytes) {
+                        sizeLabel = `~${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+                    } else if (duration > 0) {
+                        sizeLabel = `~${((tier.refBitrate * duration) / 8 / 1024).toFixed(1)} MB`;
+                    } else {
+                        sizeLabel = tier.maxH === 1080 ? "~15-30 MB" : "~8-15 MB";
+                    }
+
+                    const formatSelector = bestStream 
+                        ? `bestvideo[format_id=${bestStream.format_id}]+bestaudio/bestvideo[height<=${tier.maxH}]+bestaudio/best`
+                        : `bestvideo[height<=${tier.maxH}]+bestaudio/best`;
+
+                    availableOptions.push({ id: formatSelector, label: `${tier.label} [${sizeLabel}]`, disabled: false });
+                } else {
+                    availableOptions.push({ id: "disabled", label: `${tier.label} - [Unavailable]`, disabled: true });
+                }
+            });
+
+            res.json({ success: true, title: meta.title || "External Video Stream", thumbnail: meta.thumbnail || "", formats: availableOptions });
+
+        } catch (e) {
+            res.json({ success: false, message: "Engine compilation structural error." });
         }
-        processMetadata(stdout, isAudio, res);
     });
 });
 
-function processMetadata(stdout, isAudio, res) {
-    try {
-        const meta = JSON.parse(stdout);
-        const rawFormats = meta.formats || [];
-        const duration = meta.duration || 180;
-
-        if (isAudio) {
-            const audioTiers = [
-                { id: "320K", label: "Studio Master (320kbps MP3)", bitrate: 320, defaultMb: 7.2 },
-                { id: "256K", label: "High Quality (256kbps MP3)", bitrate: 256, defaultMb: 5.8 },
-                { id: "128K", label: "Standard Quality (128kbps MP3)", bitrate: 128, defaultMb: 2.9 }
-            ];
-
-            let availableAudio = audioTiers.map(tier => {
-                let calcSize = duration > 0 ? formatBytes((tier.bitrate * 1000 * duration) / 8) : null;
-                let sizeStr = calcSize || `${tier.defaultMb} MB`;
-                return { id: tier.id, label: `${tier.label} [~${sizeStr}]` };
-            });
-
-            return res.json({
-                success: true,
-                title: meta.title || "Audio Track",
-                thumbnail: meta.thumbnail || (meta.thumbnails && meta.thumbnails.length ? meta.thumbnails[meta.thumbnails.length - 1].url : ""),
-                formats: availableAudio
-            });
-        }
-
-        const qualityTiers = [
-            { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", refBitrate: 25000, defaultMb: 85.0 },
-            { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", refBitrate: 12000, defaultMb: 45.0 },
-            { maxH: 1440, minH: 1081, label: "1080p Full HD", refBitrate: 6000, defaultMb: 22.0 },
-            { maxH: 1080, minH: 721,  label: "720p HD", refBitrate: 3000, defaultMb: 11.5 },
-            { maxH: 720,  minH: 481,  label: "480p HQ", refBitrate: 1500, defaultMb: 5.8 },
-            { maxH: 480,  minH: 0,    label: "360p Standard", refBitrate: 800, defaultMb: 3.2 }
-        ];
-        
-        let availableOptions = [];
-        let maxFoundHeight = 0;
-        rawFormats.forEach(f => { if (f.height > maxFoundHeight) maxFoundHeight = f.height; });
-
-        if (maxFoundHeight === 0) {
-            maxFoundHeight = meta.height || 720;
-        }
-
-        qualityTiers.forEach(tier => {
-            const hasStream = (tier.maxH <= (maxFoundHeight + 100));
-            
-            if (hasStream) {
-                const validStreams = rawFormats.filter(f => f.height > tier.minH && f.height <= tier.maxH);
-                validStreams.sort((a, b) => (b.tbr || b.filesize || 0) - (a.tbr || a.filesize || 0));
-                const bestStream = validStreams[0];
-
-                let realBytes = bestStream ? (bestStream.filesize || bestStream.filesize_approx || 0) : (meta.filesize || meta.filesize_approx || 0);
-                let sizeStr = formatBytes(realBytes);
-
-                if (!sizeStr && duration > 0) {
-                    sizeStr = formatBytes((tier.refBitrate * 1000 * duration) / 8);
-                }
-
-                if (!sizeStr) {
-                    sizeStr = `${tier.defaultMb} MB`;
-                }
-
-                const formatSelector = bestStream 
-                    ? `bestvideo[format_id=${bestStream.format_id}]+bestaudio/bestvideo[height<=${tier.maxH}]+bestaudio/best`
-                    : `bestvideo[height<=${tier.maxH}]+bestaudio/best`;
-
-                availableOptions.push({ id: formatSelector, label: `${tier.label} [~${sizeStr}]`, disabled: false });
-            } else {
-                availableOptions.push({ id: "disabled", label: `${tier.label} - [Unavailable]`, disabled: true });
-            }
-        });
-
-        res.json({ 
-            success: true, 
-            title: meta.title || "External Media Stream", 
-            thumbnail: meta.thumbnail || (meta.thumbnails && meta.thumbnails.length ? meta.thumbnails[meta.thumbnails.length - 1].url : ""), 
-            formats: availableOptions 
-        });
-
-    } catch (e) {
-        res.json({ success: false, message: "Metadata error." });
-    }
-}
-
-// --- ROUTE 2: PREPARE VIDEO ---
+// --- ROUTE: VIDEO DOWNLOAD ENGINE ---
 app.post('/api/prepare-video', (req, res) => {
-    let { url, formatId } = req.body;
-    if (!url) return res.json({ success: false, message: "Invalid parameters." });
+    const { url, formatId } = req.body;
+    if (!url || !formatId || formatId === "disabled") return res.json({ success: false, message: "Invalid parameters." });
 
     const targetUrl = cleanUrl(url);
     const outputPath = path.join(TMP_DIR, `video_${Date.now()}.mp4`);
-    const selectedFormat = (formatId && formatId !== "disabled") ? formatId : "bestvideo+bestaudio/best";
-    
-    const cmd = `${YTDLP} ${YT_FLAGS} -f "${selectedFormat}" -o "${outputPath}" "${targetUrl}"`;
+    const cmd = `${YTDLP} ${ENGINE_FLAGS} -f "${formatId}" -o "${outputPath}" "${targetUrl}"`;
 
     exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (err) => {
         if (err || !fs.existsSync(outputPath)) {
-            const fallbackCmd = `${YTDLP} ${YT_FLAGS} -f "best" -o "${outputPath}" "${targetUrl}"`;
+            const fallbackCmd = `${YTDLP} ${ENGINE_FLAGS} -f "best" -o "${outputPath}" "${targetUrl}"`;
             exec(fallbackCmd, (fErr) => {
                 if (fErr || !fs.existsSync(outputPath)) {
                     return res.json({ success: false, message: "Download failed." });
@@ -184,14 +164,14 @@ app.post('/api/prepare-video', (req, res) => {
     });
 });
 
-// --- ROUTE 3: PREPARE AUDIO ---
+// --- ROUTE: AUDIO DOWNLOAD ENGINE ---
 app.post('/api/prepare-audio', (req, res) => {
-    let { url } = req.body;
-    if (!url) return res.json({ success: false, message: "Invalid URL." });
+    const { url } = req.body;
+    if (!url) return res.json({ success: false, message: "Invalid parameters." });
 
     const targetUrl = cleanUrl(url);
     const outputPath = path.join(TMP_DIR, `audio_${Date.now()}.m4a`);
-    const cmd = `${YTDLP} ${YT_FLAGS} -f "bestaudio/ba/best" -o "${outputPath}" "${targetUrl}"`;
+    const cmd = `${YTDLP} ${ENGINE_FLAGS} -f "bestaudio/ba/best" -o "${outputPath}" "${targetUrl}"`;
 
     exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (err) => {
         if (err || !fs.existsSync(outputPath)) {
@@ -201,44 +181,7 @@ app.post('/api/prepare-audio', (req, res) => {
     });
 });
 
-// --- ROUTE 4: MOVIE SEARCH ---
-app.get('/api/search-movie', async (req, res) => {
-    const name = req.query.name;
-    if (!name) return res.json({ success: false, error: "Movie/Series name is required." });
-    
-    try {
-        const tmdbRes = await axios.get(`https://api.themoviedb.org/3/search/multi?api_key=cba322ef451e065715560a631bf37e1b&query=${encodeURIComponent(name)}`);
-
-        if (tmdbRes.data && tmdbRes.data.results && tmdbRes.data.results.length > 0) {
-            const validMedia = tmdbRes.data.results.filter(item => (item.media_type === 'movie' || item.media_type === 'tv') && item.poster_path);
-            
-            if (validMedia.length > 0) {
-                const parsedResults = validMedia.map(m => {
-                    const title = m.title || m.name || m.original_title;
-                    const date = m.release_date || m.first_air_date || '';
-                    const year = date ? date.split('-')[0] : 'N/A';
-                    
-                    return {
-                        title: title,
-                        year: year,
-                        type: m.media_type === 'tv' ? 'Web Series' : 'Movie',
-                        poster: `https://image.tmdb.org/t/p/w500${m.poster_path}`,
-                        watchUrl: `https://vidsrc.to/embed/${m.media_type}/${m.id}`,
-                        downloadUrl: `https://archive.org/search.php?query=${encodeURIComponent(title)}`
-                    };
-                });
-                return res.json({ success: true, results: parsedResults });
-            }
-        }
-
-        return res.json({ success: false, error: "Yeh movie ya series database mein nahi mili." });
-
-    } catch (e) {
-        return res.json({ success: false, error: "Search database service issue." });
-    }
-});
-
-// --- ROUTE 5: CHROME DOWNLOAD POPUP ---
+// --- ROUTE: CHROME DOWNLOAD POPUP ---
 app.get('/api/chrome-popup', (req, res) => {
     const fileName = req.query.file;
     const filePath = path.join(TMP_DIR, fileName);
