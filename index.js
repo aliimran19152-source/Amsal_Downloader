@@ -167,7 +167,7 @@ app.get('/', (req, res) => {
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "💎 <b>[Processing Core]:</b> Syncing selected high-bitrate stream & merging audio/video...";
+                statusPanel.innerHTML = "💎 <b>[Processing Core]:</b> Processing video file on server...";
                 
                 try {
                     const response = await fetch('/api/prepare-video', {
@@ -197,7 +197,7 @@ app.get('/', (req, res) => {
                 
                 audioPreviewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "🎵 <b>[Audio Analyzer]:</b> Extracting soundtrack details and stream metadata...";
+                statusPanel.innerHTML = "🎵 <b>[Audio Analyzer]:</b> Extracting soundtrack details...";
                 
                 try {
                     const response = await fetch('/api/fetch-info', {
@@ -241,7 +241,7 @@ app.get('/', (req, res) => {
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "🎛️ <b>[Master Studio Engine]:</b> Transcoding lossless audio matrix...";
+                statusPanel.innerHTML = "🎛️ <b>[Master Studio Engine]:</b> Transcoding audio stream...";
                 
                 try {
                     const response = await fetch('/api/prepare-audio', {
@@ -314,12 +314,12 @@ app.post('/api/fetch-info', (req, res) => {
 
             // Video parsing core
             const qualityTiers = [
-                { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", refBitrate: 25000, fallbackSize: "~60-150 MB" },
-                { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", refBitrate: 12000, fallbackSize: "~40-80 MB" },
-                { maxH: 1440, minH: 1081, label: "1080p Full HD", refBitrate: 6000, fallbackSize: "~20-45 MB" },
-                { maxH: 1080, minH: 721,  label: "720p HD", refBitrate: 3000, fallbackSize: "~10-25 MB" },
-                { maxH: 720,  minH: 481,  label: "480p HQ", refBitrate: 1500, fallbackSize: "~5-12 MB" },
-                { maxH: 480,  minH: 0,    label: "360p Standard", refBitrate: 800, fallbackSize: "~2-6 MB" }
+                { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", fallbackSize: "~60-150 MB" },
+                { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", fallbackSize: "~40-80 MB" },
+                { maxH: 1440, minH: 1081, label: "1080p Full HD", fallbackSize: "~20-45 MB" },
+                { maxH: 1080, minH: 721,  label: "720p HD", fallbackSize: "~10-25 MB" },
+                { maxH: 720,  minH: 481,  label: "480p HQ", fallbackSize: "~5-12 MB" },
+                { maxH: 480,  minH: 0,    label: "360p Standard", fallbackSize: "~2-6 MB" }
             ];
             
             let availableOptions = [];
@@ -341,15 +341,13 @@ app.post('/api/fetch-info', (req, res) => {
                     if (bytes) {
                         sizeLabel = `~${(bytes / (1024 * 1024)).toFixed(1)} MB`;
                     } else if (duration > 0) {
-                        sizeLabel = `~${((tier.refBitrate * duration) / 8 / 1024).toFixed(1)} MB`;
+                        sizeLabel = `~${((3000 * duration) / 8 / 1024).toFixed(1)} MB`;
                     } else {
                         sizeLabel = tier.fallbackSize;
                     }
 
-                    // Flexible format selector with fallbacks
-                    const formatSelector = bestStream 
-                        ? `bestvideo[format_id=${bestStream.format_id}]+bestaudio/bestvideo[height<=${tier.maxH}]+bestaudio/best[height<=${tier.maxH}]/best`
-                        : `bestvideo[height<=${tier.maxH}]+bestaudio/best[height<=${tier.maxH}]/best`;
+                    // Direct MP4 fallback query that works locally and remotely
+                    const formatSelector = `best[height<=${tier.maxH}]/bestvideo[height<=${tier.maxH}]+bestaudio/best`;
 
                     availableOptions.push({ id: formatSelector, label: `${tier.label} [${sizeLabel}]`, disabled: false });
                 } else {
@@ -375,18 +373,17 @@ app.post('/api/prepare-video', (req, res) => {
     const outputFilename = `video_${Date.now()}.mp4`;
     const outputPath = path.join(TMP_DIR, outputFilename);
     
-    // Explicit ffmpeg path, merge video format mp4, and fallback handling
-    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatId}" --merge-output-format mp4 --ffmpeg-location /usr/bin/ffmpeg "${url}" -o "${outputPath}"`;
+    // Auto fallback command without strict path constraints
+    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatId}" "${url}" -o "${outputPath}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
-        if (err) {
-            console.error("YTDLP Error:", stderr || err.message);
-            // Fallback command if merging fails
-            const fallbackCommand = `yt-dlp --no-check-certificates -f "best" "${url}" -o "${outputPath}"`;
+        if (err || !fs.existsSync(outputPath)) {
+            // Absolute direct fallback
+            const fallbackCommand = `yt-dlp --no-check-certificates "${url}" -o "${outputPath}"`;
             
             exec(fallbackCommand, { maxBuffer: 1024 * 1024 * 100 }, (fErr) => {
-                if(fErr) {
-                    return res.json({ success: false, message: "Processing failed: " + (stderr ? stderr.substring(0, 100) : "Download Error") });
+                if(fErr || !fs.existsSync(outputPath)) {
+                    return res.json({ success: false, message: "Download failed. File couldn't be saved on server." });
                 }
                 res.json({ success: true, filename: outputFilename });
             });
@@ -398,17 +395,16 @@ app.post('/api/prepare-video', (req, res) => {
 
 // --- ROUTE: AUDIO DOWNLOAD ENGINE ---
 app.post('/api/prepare-audio', (req, res) => {
-    const { url, quality } = req.body;
+    const { url } = req.body;
     if (!url) return res.json({ success: false, message: "Invalid Audio URL." });
 
-    const bitrate = quality ? quality.replace('K', 'k') : '320k';
     const outputFilename = `audio_${Date.now()}.mp3`;
     const outputPath = path.join(TMP_DIR, outputFilename);
-    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -x --audio-format mp3 --audio-quality ${bitrate} --ffmpeg-location /usr/bin/ffmpeg "${url}" -o "${outputPath}"`;
+    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -x --audio-format mp3 "${url}" -o "${outputPath}"`;
 
-    exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
-        if (err) {
-            return res.json({ success: false, message: "Audio processing failed: " + (stderr ? stderr.substring(0, 100) : "Extract Error") });
+    exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err) => {
+        if (err || !fs.existsSync(outputPath)) {
+            return res.json({ success: false, message: "Audio extraction failed." });
         }
         res.json({ success: true, filename: outputFilename });
     });
@@ -423,8 +419,10 @@ app.get('/api/chrome-popup', (req, res) => {
     const filePath = path.join(TMP_DIR, safeFilename);
 
     if (fs.existsSync(filePath)) {
-        res.download(filePath, safeFilename, () => {
-            fs.unlink(filePath, () => {});
+        res.download(filePath, safeFilename, (err) => {
+            if (!err) {
+                fs.unlink(filePath, () => {});
+            }
         });
     } else {
         res.status(404).send("File not found or expired.");
