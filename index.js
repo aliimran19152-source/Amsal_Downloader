@@ -348,10 +348,31 @@ app.post('/api/fetch-info', async (req, res) => {
 
             console.log(`fetch-info: found ${formatsList.length} distinct video formats for`, url);
 
-            formatsList.unshift({
-                id: "bestvideo+bestaudio/best",
-                label: "🌟 Absolute Highest Combined Stream (Uncompressed)"
-            });
+            // Find the actual highest-tbr format from our parsed list and use its
+            // real format_id, instead of the unreliable generic "bestvideo" keyword
+            // (yt-dlp's auto-picker can choose a tiny format when tbr/filesize are null)
+            let highestTbrFormat = null;
+            let highestTbr = -1;
+            if (meta.formats && Array.isArray(meta.formats)) {
+                meta.formats.forEach(f => {
+                    if (f.vcodec !== 'none' && f.tbr && f.tbr > highestTbr) {
+                        highestTbr = f.tbr;
+                        highestTbrFormat = f.format_id;
+                    }
+                });
+            }
+
+            if (highestTbrFormat) {
+                formatsList.unshift({
+                    id: highestTbrFormat,
+                    label: `🌟 Absolute Highest Combined Stream (${highestTbr.toFixed(0)}kbps, verified)`
+                });
+            } else {
+                formatsList.unshift({
+                    id: "bestvideo+bestaudio/best",
+                    label: "🌟 Absolute Highest Combined Stream (Uncompressed)"
+                });
+            }
 
             res.json({
                 success: true,
@@ -404,7 +425,15 @@ app.post('/api/prepare-video', (req, res) => {
         console.log(`PREPARE-VIDEO SUCCESS: ${outputFilename} -> ${(stats.size / (1024*1024)).toFixed(2)} MB`);
         console.log("yt-dlp STDOUT tail:", stdout ? stdout.slice(-800) : "(empty)");
 
-        res.json({ success: true, filename: outputFilename });
+        // Check the ACTUAL duration of the downloaded file using ffprobe
+        exec(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${outputPath}"`, (probeErr, probeOut) => {
+            if (probeErr) {
+                console.error("FFPROBE ERROR:", probeErr.message);
+            } else {
+                console.log(`ACTUAL DOWNLOADED FILE DURATION: ${probeOut.trim()} seconds`);
+            }
+            res.json({ success: true, filename: outputFilename });
+        });
     });
 });
 
