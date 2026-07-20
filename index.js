@@ -1,8 +1,10 @@
 const express = require('express');
+const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.get('/', (req, res) => {
     res.send(`
@@ -11,12 +13,12 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AMSAL STUDIOS - CORE WORKSTATION v2.0</title>
+        <title>AMSAL STUDIOS - UNIVERSAL MEDIA ENGINE</title>
         <style>
             * { box-sizing: border-box; }
             body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, sans-serif; text-align: center; padding: 20px; margin: 0; }
             .container { max-width: 600px; margin: 20px auto; background: #161b22; padding: 25px; border-radius: 16px; border: 2px solid #00f2fe; box-shadow: 0 0 20px rgba(0,242,254,0.15); }
-            h1 { color: #00f2fe; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; font-size: 24px; }
+            h1 { color: #00f2fe; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; font-size: 22px; }
             .badge { background: #ffbc00; color: #000; font-size: 11px; font-weight: bold; padding: 4px 10px; border-radius: 10px; display: inline-block; margin-bottom: 20px; }
             
             .tab-container { display: flex; gap: 10px; margin-bottom: 20px; }
@@ -32,12 +34,14 @@ app.get('/', (req, res) => {
             
             .status { background: #21262d; border-left: 4px solid #00f2fe; padding: 12px; text-align: left; border-radius: 4px; font-size: 13px; display: none; margin-top: 15px; word-break: break-all; }
             .dl-link { display: block; background: linear-gradient(45deg, #00ff87, #60efff); color: #000; text-decoration: none; padding: 12px; border-radius: 8px; font-weight: bold; text-align: center; margin-top: 10px; font-size: 15px; }
+            .platform-icons { font-size: 12px; color: #8b949e; margin-bottom: 15px; }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>AMSAL STUDIOS</h1>
-            <div class="badge">PREMIUM WORKSTATION v2.0</div>
+            <div class="badge">UNIVERSAL DOWNLOADER v3.0</div>
+            <div class="platform-icons">Supports: YouTube | TikTok | Instagram | Pinterest | X (Twitter)</div>
 
             <div class="tab-container">
                 <button class="tab-btn active" id="vTab" onclick="switchMode('video')">📹 Video Engine</button>
@@ -45,29 +49,28 @@ app.get('/', (req, res) => {
             </div>
 
             <form id="mediaForm">
-                <label>Target Media URL (YouTube, Insta, TikTok)</label>
+                <label>Target Media Link</label>
                 <input type="text" id="targetUrl" placeholder="Paste link here..." required>
 
                 <div id="videoOptions">
-                    <label>Select Video Quality</label>
+                    <label>Select Quality Preference</label>
                     <select id="videoQuality">
-                        <option value="max">Best Available / Auto Quality</option>
+                        <option value="best">Best HD Quality (Auto Select)</option>
                         <option value="1080">1080p Full HD</option>
                         <option value="720">720p HD</option>
-                        <option value="480">480p Standard</option>
-                        <option value="360">360p Low (Data Saver)</option>
+                        <option value="480">480p SD</option>
+                        <option value="360">360p Low</option>
                     </select>
                 </div>
 
                 <div id="audioOptions" style="display:none;">
-                    <label>Select Audio Format / Quality</label>
+                    <label>Select Audio Preference</label>
                     <select id="audioQuality">
-                        <option value="mp3">MP3 Format (High Quality Audio)</option>
-                        <option value="best">Original Audio Stream</option>
+                        <option value="mp3">MP3 / Best Audio Track</option>
                     </select>
                 </div>
 
-                <button type="submit" class="action-btn" id="submitBtn">FETCH VIDEO DOWNLOAD</button>
+                <button type="submit" class="action-btn" id="submitBtn">FETCH MEDIA DOWNLOAD</button>
             </form>
 
             <div id="statusBox" class="status"></div>
@@ -82,59 +85,34 @@ app.get('/', (req, res) => {
                 document.getElementById('aTab').classList.toggle('active', mode === 'audio');
                 document.getElementById('videoOptions').style.display = mode === 'video' ? 'block' : 'none';
                 document.getElementById('audioOptions').style.display = mode === 'audio' ? 'block' : 'none';
-                document.getElementById('submitBtn').innerText = mode === 'video' ? 'FETCH VIDEO DOWNLOAD' : 'EXTRACT AUDIO TRACK';
+                document.getElementById('submitBtn').innerText = mode === 'video' ? 'FETCH MEDIA DOWNLOAD' : 'EXTRACT AUDIO TRACK';
                 document.getElementById('statusBox').style.display = 'none';
             }
 
             document.getElementById('mediaForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const url = document.getElementById('targetUrl').value;
-                const quality = currentMode === 'video' ? document.getElementById('videoQuality').value : document.getElementById('audioQuality').value;
+                const quality = currentMode === 'video' ? document.getElementById('videoQuality').value : 'mp3';
                 const statusBox = document.getElementById('statusBox');
 
                 statusBox.style.display = 'block';
-                statusBox.innerHTML = "⚡ <b>[Client-Side Direct Tunnel]:</b> Processing via user client IP...";
+                statusBox.innerHTML = "⚡ <b>[Extracting Stream]:</b> Processing multi-platform route...";
 
-                // Global direct client-side nodes
-                const nodes = [
-                    'https://api.cobalt.tools',
-                    'https://cobalt.api.redna2.xyz',
-                    'https://co.wuk.sh',
-                    'https://cobalt-api.kwippy.com'
-                ];
+                try {
+                    const res = await fetch('/api/fetch', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url, mode: currentMode, quality })
+                    });
+                    const data = await res.json();
 
-                let success = false;
-
-                for (let node of nodes) {
-                    try {
-                        const response = await fetch(node + '/', {
-                            method: 'POST',
-                            headers: {
-                                'Accept': 'application/json',
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                url: url,
-                                videoQuality: quality === 'max' ? 'max' : quality,
-                                isAudioOnly: currentMode === 'audio',
-                                aFormat: 'mp3'
-                            })
-                        });
-
-                        const data = await response.json();
-
-                        if (data && data.url) {
-                            statusBox.innerHTML = "✅ <b>[Extraction Successful]:</b><br><a class='dl-link' href='" + data.url + "' target='_blank' rel='noopener noreferrer' download>⬇️ DOWNLOAD " + (currentMode.toUpperCase()) + " FILE NOW</a>";
-                            success = true;
-                            break;
-                        }
-                    } catch (err) {
-                        continue; // try next node if blocked or down
+                    if (data.success) {
+                        statusBox.innerHTML = "✅ <b>[Link Ready]:</b><br><a class='dl-link' href='" + data.downloadUrl + "' target='_blank' rel='noopener noreferrer' download>⬇️ DOWNLOAD " + (currentMode.toUpperCase()) + " FILE NOW</a>";
+                    } else {
+                        statusBox.innerHTML = "❌ <b>[Error]:</b> " + data.message;
                     }
-                }
-
-                if (!success) {
-                    statusBox.innerHTML = "❌ <b>[Error]:</b> Service node temporary response limit. Please try pasting the link again in 5 seconds.";
+                } catch(err) {
+                    statusBox.innerHTML = "❌ <b>[Timeout]:</b> Connection busy, please click again.";
                 }
             });
         </script>
@@ -143,4 +121,91 @@ app.get('/', (req, res) => {
     `);
 });
 
-app.listen(PORT, () => console.log(`Client-Bypass Server running on ${PORT}`));
+// MULTI-PLATFORM CONTROLLER
+app.post('/api/fetch', async (req, res) => {
+    const { url, mode, quality } = req.body;
+    if (!url) return res.json({ success: false, message: "URL required." });
+
+    const cleanUrl = url.trim();
+
+    try {
+        // 1. TIKTOK ROUTE
+        if (cleanUrl.includes('tiktok.com')) {
+            const ttRes = await axios.post('https://www.tikwm.com/api/', new URLSearchParams({
+                'url': cleanUrl,
+                'hd': 1
+            }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' } });
+
+            if (ttRes.data && ttRes.data.data) {
+                const dl = mode === 'audio' ? ttRes.data.data.music : (ttRes.data.data.hdplay || ttRes.data.data.play);
+                return res.json({ success: true, downloadUrl: dl });
+            }
+        }
+
+        // 2. YOUTUBE ROUTE (VIA PIPED API - NO IP BLOCKS)
+        if (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be')) {
+            let videoId = "";
+            if (cleanUrl.includes('youtu.be/')) {
+                videoId = cleanUrl.split('youtu.be/')[1].split('?')[0];
+            } else if (cleanUrl.includes('shorts/')) {
+                videoId = cleanUrl.split('shorts/')[1].split('?')[0];
+            } else if (cleanUrl.includes('watch?v=')) {
+                videoId = cleanUrl.split('watch?v=')[1].split('&')[0];
+            }
+
+            if (videoId) {
+                const pipedNodes = [
+                    'https://pipedapi.kavin.rocks',
+                    'https://api.piped.private.coffee',
+                    'https://pipedapi.mha.fi'
+                ];
+
+                for (let node of pipedNodes) {
+                    try {
+                        const pRes = await axios.get(`${node}/streams/${videoId}`, { timeout: 6000 });
+                        if (pRes.data) {
+                            if (mode === 'audio' && pRes.data.audioStreams.length > 0) {
+                                return res.json({ success: true, downloadUrl: pRes.data.audioStreams[0].url });
+                            }
+                            
+                            const videoStreams = pRes.data.videoStreams || [];
+                            if (videoStreams.length > 0) {
+                                // Filter audio+video streams or take highest quality video
+                                let chosen = videoStreams.find(s => s.quality === quality) || videoStreams[0];
+                                return res.json({ success: true, downloadUrl: chosen.url });
+                            }
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // 3. INSTAGRAM / PINTEREST / X (TWITTER) UNIVERSAL ROUTE
+        const globalApis = [
+            `https://api.vkrdown.com/api/item?url=${encodeURIComponent(cleanUrl)}`,
+            `https://downloader.freemediagenerator.com/api/get-download-link?url=${encodeURIComponent(cleanUrl)}`
+        ];
+
+        for (let gApi of globalApis) {
+            try {
+                const gRes = await axios.get(gApi, { timeout: 7000 });
+                if (gRes.data) {
+                    let dl = gRes.data.url || gRes.data.downloadUrl;
+                    if (!dl && gRes.data.data && gRes.data.data.url) dl = gRes.data.data.url;
+                    if (dl) return res.json({ success: true, downloadUrl: dl });
+                }
+            } catch (e) {
+                continue;
+            }
+        }
+
+        res.json({ success: false, message: "Link extract nahi ho saka. Sahi public video URL paste karein." });
+
+    } catch (err) {
+        res.json({ success: false, message: "Processing error. Try again." });
+    }
+});
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
