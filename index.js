@@ -15,7 +15,6 @@ if (!fs.existsSync(TMP_DIR)) {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- HTML FRONTEND INTERFACE ---
 app.get('/', (req, res) => {
     res.send(`
     <!DOCTYPE html>
@@ -63,6 +62,7 @@ app.get('/', (req, res) => {
                 <div class="tab" onclick="switchTab('audio-sec', this)">Audio Engine</div>
             </div>
 
+            <!-- VIDEO SECTION -->
             <div id="video-sec" class="form-section active">
                 <form id="fetchForm">
                     <label>Target Media URL (Video)</label>
@@ -73,12 +73,13 @@ app.get('/', (req, res) => {
                 <div id="previewCard" class="preview-card">
                     <div id="videoTitle" class="preview-title">Video Title</div>
                     <img id="videoThumb" src="" alt="Thumbnail">
-                    <label>Select Premium Quality</label>
+                    <label>Select Quality Option</label>
                     <select id="qualityDropdown" class="quality-select"></select>
-                    <button id="startDownloadBtn" class="btn-download">Download Selected Quality</button>
+                    <button id="startDownloadBtn" class="btn-download">Download Best Resolution</button>
                 </div>
             </div>
 
+            <!-- AUDIO SECTION -->
             <div id="audio-sec" class="form-section">
                 <form id="audioFetchForm">
                     <label>Target Media URL (Audio / Sound Extract)</label>
@@ -120,7 +121,7 @@ app.get('/', (req, res) => {
                 
                 previewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching media meta-data and sizing...";
+                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching media meta-data...";
                 
                 try {
                     const response = await fetch('/api/fetch-info', {
@@ -147,7 +148,6 @@ app.get('/', (req, res) => {
                             const option = document.createElement('option');
                             option.value = f.id;
                             option.innerText = f.label;
-                            if(f.disabled) option.disabled = true;
                             dropdown.appendChild(option);
                         });
                         
@@ -165,7 +165,7 @@ app.get('/', (req, res) => {
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "💎 <b>[Processing Core]:</b> Processing video file on server...";
+                statusPanel.innerHTML = "💎 <b>[Raw Uncompressed Engine]:</b> Fetching maximum bitrate stream...";
                 
                 try {
                     const response = await fetch('/api/prepare-video', {
@@ -282,84 +282,28 @@ app.post('/api/fetch-info', (req, res) => {
         
         try {
             const meta = JSON.parse(stdout);
-            const rawFormats = meta.formats || [];
-            const duration = meta.duration || 0;
             
             if (type === 'audio') {
-                const audioTiers = [
-                    { id: "320K", label: "Studio Master (320kbps MP3)", bitrate: 320 },
-                    { id: "256K", label: "High Quality (256kbps MP3)", bitrate: 256 },
-                    { id: "128K", label: "Standard Quality (128kbps MP3)", bitrate: 128 }
-                ];
-                
-                let availableAudio = [];
-                audioTiers.forEach(tier => {
-                    let sizeLabel = "Unknown Size";
-                    if (duration > 0) {
-                        const estimatedMB = ((tier.bitrate * duration) / 8 / 1024).toFixed(1);
-                        sizeLabel = `~${estimatedMB} MB`;
-                    } else {
-                        sizeLabel = tier.id === "320K" ? "~5-12 MB" : "~2-6 MB";
-                    }
-                    
-                    availableAudio.push({
-                        id: tier.id,
-                        label: `${tier.label} [${sizeLabel}]`
-                    });
-                });
-
                 return res.json({
                     success: true,
                     title: meta.title || "Extracted Audio Track",
                     thumbnail: meta.thumbnail || "",
-                    formats: availableAudio
+                    formats: [
+                        { id: "bestaudio/best", label: "Studio Master Quality (Highest Bitrate)" }
+                    ]
                 });
             }
 
-            // Enhanced Resolution Tiers Selector for Maximum Quality Isolation
-            const qualityTiers = [
-                { maxH: 4320, minH: 2161, exactLabel: "2160", label: "4K UHD (2160p)", fallbackSize: "~60-150 MB" },
-                { maxH: 2160, minH: 1441, exactLabel: "1440", label: "2K QuadHD (1440p)", fallbackSize: "~40-80 MB" },
-                { maxH: 1440, minH: 1081, exactLabel: "1080", label: "1080p Full HD", fallbackSize: "~20-45 MB" },
-                { maxH: 1080, minH: 721,  exactLabel: "720",  label: "720p HD", fallbackSize: "~10-25 MB" },
-                { maxH: 720,  minH: 481,  exactLabel: "480",  label: "480p HQ", fallbackSize: "~5-12 MB" },
-                { maxH: 480,  minH: 0,    exactLabel: "360",  label: "360p Standard", fallbackSize: "~2-6 MB" }
-            ];
-            
-            let availableOptions = [];
-            let maxFoundHeight = 0;
-            rawFormats.forEach(f => {
-                if (f.height > maxFoundHeight) maxFoundHeight = f.height;
+            // Simple & Direct: Absolute Highest Available Quality without Format Constraints
+            res.json({ 
+                success: true, 
+                title: meta.title || "External Video Stream", 
+                thumbnail: meta.thumbnail || "", 
+                formats: [
+                    { id: "bestvideo+bestaudio/best", label: "Absolute Best / Highest Quality Available (Uncompressed)" },
+                    { id: "best", label: "Original Single Stream (Fast Sync)" }
+                ] 
             });
-            if (maxFoundHeight === 0 && rawFormats.length > 0) maxFoundHeight = 720;
-
-            qualityTiers.forEach(tier => {
-                const hasStream = rawFormats.some(f => f.height > tier.minH && f.height <= tier.maxH) || (tier.exactLabel === "720" && maxFoundHeight >= 720);
-                if (hasStream && tier.maxH <= (maxFoundHeight + 100)) {
-                    const validStreams = rawFormats.filter(f => f.height > tier.minH && f.height <= tier.maxH);
-                    validStreams.sort((a, b) => (b.tbr || 0) - (a.tbr || 0));
-                    const bestStream = validStreams[0];
-                    let sizeLabel = "";
-                    let bytes = bestStream ? (bestStream.filesize || bestStream.filesize_approx) : null;
-                    
-                    if (bytes) {
-                        sizeLabel = `~${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-                    } else if (duration > 0) {
-                        sizeLabel = `~${((3500 * duration) / 8 / 1024).toFixed(1)} MB`;
-                    } else {
-                        sizeLabel = tier.fallbackSize;
-                    }
-
-                    // Strict selector targeting maximum possible bitrate for chosen resolution tier explicitly
-                    const formatSelector = `bestvideo[height<=${tier.maxH}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${tier.maxH}]+bestaudio/best[height<=${tier.maxH}]/best`;
-
-                    availableOptions.push({ id: formatSelector, label: `${tier.label} [${sizeLabel}]`, disabled: false });
-                } else {
-                    availableOptions.push({ id: "disabled", label: `${tier.label} - [Unavailable]`, disabled: true });
-                }
-            });
-
-            res.json({ success: true, title: meta.title || "External Video Stream", thumbnail: meta.thumbnail || "", formats: availableOptions });
 
         } catch (e) {
             res.json({ success: false, message: "Engine compilation structural error." });
@@ -370,30 +314,35 @@ app.post('/api/fetch-info', (req, res) => {
 // --- ROUTE: VIDEO DOWNLOAD ENGINE ---
 app.post('/api/prepare-video', (req, res) => {
     const { url, formatId } = req.body;
-    if (!url || !formatId || formatId === "disabled") {
-        return res.json({ success: false, message: "Invalid URL or quality choice." });
+    if (!url) {
+        return res.json({ success: false, message: "Invalid URL." });
     }
 
-    const outputFilename = `video_${Date.now()}.mp4`;
+    const outputFilename = `video_${Date.now()}.%(ext)s`;
     const outputPath = path.join(TMP_DIR, outputFilename);
+    const targetFormat = formatId || "bestvideo+bestaudio/best";
     
-    // Strict format prioritization with auto-merge features
-    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatId}" --merge-output-format mp4 "${url}" -o "${outputPath}"`;
+    // Command allows yt-dlp to grab raw best quality file extension automatically
+    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${targetFormat}" "${url}" -o "${outputPath}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
-        if (err || !fs.existsSync(outputPath)) {
-            // Absolute direct raw fallback if complex merge fails due to ffmpeg quirks
-            const fallbackCommand = `yt-dlp --no-check-certificates -f "best" "${url}" -o "${outputPath}"`;
+        const files = fs.readdirSync(TMP_DIR);
+        const downloadedFile = files.find(f => f.startsWith(`video_${outputFilename.split('_')[1].split('.')[0]}`));
+
+        if (err || !downloadedFile) {
+            console.error("Primary download failed, attempting fallback:", stderr);
+            const fallbackPath = path.join(TMP_DIR, `fallback_${Date.now()}.mp4`);
+            const fallbackCommand = `yt-dlp --no-check-certificates "${url}" -o "${fallbackPath}"`;
             
             exec(fallbackCommand, { maxBuffer: 1024 * 1024 * 100 }, (fErr) => {
-                if(fErr || !fs.existsSync(outputPath)) {
-                    return res.json({ success: false, message: "Download failed. File couldn't be saved on server." });
+                if(fErr || !fs.existsSync(fallbackPath)) {
+                    return res.json({ success: false, message: "Download failed on server." });
                 }
-                res.json({ success: true, filename: outputFilename });
+                res.json({ success: true, filename: path.basename(fallbackPath) });
             });
             return;
         }
-        res.json({ success: true, filename: outputFilename });
+        res.json({ success: true, filename: downloadedFile });
     });
 });
 
