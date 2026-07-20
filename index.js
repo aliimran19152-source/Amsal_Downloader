@@ -5,7 +5,6 @@ const fs = require('fs');
 const chalk = require('chalk');
 
 const app = express();
-// Dynamic port allocation for Render deployment
 const PORT = process.env.PORT || 3000;
 const TMP_DIR = path.join(__dirname, 'downloads');
 
@@ -272,7 +271,8 @@ app.post('/api/fetch-info', (req, res) => {
     const { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
 
-    const command = `yt-dlp --dump-json "${url}"`;
+    // Anti-bot bypass flags added
+    const command = `yt-dlp --dump-json --no-warnings --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
     
     exec(command, { maxBuffer: 1024 * 1024 * 15 }, (err, stdout) => {
         if (err) return res.json({ success: false, message: "Could not parse link or unsupported site." });
@@ -374,7 +374,7 @@ app.post('/api/prepare-video', (req, res) => {
 
     const outputFilename = `video_${Date.now()}.mp4`;
     const outputPath = path.join(TMP_DIR, outputFilename);
-    const command = `yt-dlp -f "${formatId}" --recode-video mp4 "${url}" -o "${outputPath}"`;
+    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatId}" --recode-video mp4 "${url}" -o "${outputPath}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 50 }, (err) => {
         if (err) {
@@ -392,7 +392,7 @@ app.post('/api/prepare-audio', (req, res) => {
     const bitrate = quality ? quality.replace('K', 'k') : '320k';
     const outputFilename = `audio_${Date.now()}.mp3`;
     const outputPath = path.join(TMP_DIR, outputFilename);
-    const command = `yt-dlp -x --audio-format mp3 --audio-quality ${bitrate} "${url}" -o "${outputPath}"`;
+    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -x --audio-format mp3 --audio-quality ${bitrate} "${url}" -o "${outputPath}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 50 }, (err) => {
         if (err) {
