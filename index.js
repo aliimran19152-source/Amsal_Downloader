@@ -63,7 +63,6 @@ app.get('/', (req, res) => {
                 <div class="tab" onclick="switchTab('audio-sec', this)">Audio Engine</div>
             </div>
 
-            <!-- VIDEO SECTION -->
             <div id="video-sec" class="form-section active">
                 <form id="fetchForm">
                     <label>Target Media URL (Video)</label>
@@ -80,7 +79,6 @@ app.get('/', (req, res) => {
                 </div>
             </div>
 
-            <!-- AUDIO SECTION -->
             <div id="audio-sec" class="form-section">
                 <form id="audioFetchForm">
                     <label>Target Media URL (Audio / Sound Extract)</label>
@@ -318,14 +316,14 @@ app.post('/api/fetch-info', (req, res) => {
                 });
             }
 
-            // Video parsing core
+            // Enhanced Resolution Tiers Selector for Maximum Quality Isolation
             const qualityTiers = [
-                { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", fallbackSize: "~60-150 MB" },
-                { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", fallbackSize: "~40-80 MB" },
-                { maxH: 1440, minH: 1081, label: "1080p Full HD", fallbackSize: "~20-45 MB" },
-                { maxH: 1080, minH: 721,  label: "720p HD", fallbackSize: "~10-25 MB" },
-                { maxH: 720,  minH: 481,  label: "480p HQ", fallbackSize: "~5-12 MB" },
-                { maxH: 480,  minH: 0,    label: "360p Standard", fallbackSize: "~2-6 MB" }
+                { maxH: 4320, minH: 2161, exactLabel: "2160", label: "4K UHD (2160p)", fallbackSize: "~60-150 MB" },
+                { maxH: 2160, minH: 1441, exactLabel: "1440", label: "2K QuadHD (1440p)", fallbackSize: "~40-80 MB" },
+                { maxH: 1440, minH: 1081, exactLabel: "1080", label: "1080p Full HD", fallbackSize: "~20-45 MB" },
+                { maxH: 1080, minH: 721,  exactLabel: "720",  label: "720p HD", fallbackSize: "~10-25 MB" },
+                { maxH: 720,  minH: 481,  exactLabel: "480",  label: "480p HQ", fallbackSize: "~5-12 MB" },
+                { maxH: 480,  minH: 0,    exactLabel: "360",  label: "360p Standard", fallbackSize: "~2-6 MB" }
             ];
             
             let availableOptions = [];
@@ -336,7 +334,7 @@ app.post('/api/fetch-info', (req, res) => {
             if (maxFoundHeight === 0 && rawFormats.length > 0) maxFoundHeight = 720;
 
             qualityTiers.forEach(tier => {
-                const hasStream = rawFormats.some(f => f.height > tier.minH && f.height <= tier.maxH) || (tier.maxH === 720 && maxFoundHeight >= 720);
+                const hasStream = rawFormats.some(f => f.height > tier.minH && f.height <= tier.maxH) || (tier.exactLabel === "720" && maxFoundHeight >= 720);
                 if (hasStream && tier.maxH <= (maxFoundHeight + 100)) {
                     const validStreams = rawFormats.filter(f => f.height > tier.minH && f.height <= tier.maxH);
                     validStreams.sort((a, b) => (b.tbr || 0) - (a.tbr || 0));
@@ -347,12 +345,13 @@ app.post('/api/fetch-info', (req, res) => {
                     if (bytes) {
                         sizeLabel = `~${(bytes / (1024 * 1024)).toFixed(1)} MB`;
                     } else if (duration > 0) {
-                        sizeLabel = `~${((3000 * duration) / 8 / 1024).toFixed(1)} MB`;
+                        sizeLabel = `~${((3500 * duration) / 8 / 1024).toFixed(1)} MB`;
                     } else {
                         sizeLabel = tier.fallbackSize;
                     }
 
-                    const formatSelector = `best[height<=${tier.maxH}]/bestvideo[height<=${tier.maxH}]+bestaudio/best`;
+                    // Strict selector targeting maximum possible bitrate for chosen resolution tier explicitly
+                    const formatSelector = `bestvideo[height<=${tier.maxH}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${tier.maxH}]+bestaudio/best[height<=${tier.maxH}]/best`;
 
                     availableOptions.push({ id: formatSelector, label: `${tier.label} [${sizeLabel}]`, disabled: false });
                 } else {
@@ -378,11 +377,13 @@ app.post('/api/prepare-video', (req, res) => {
     const outputFilename = `video_${Date.now()}.mp4`;
     const outputPath = path.join(TMP_DIR, outputFilename);
     
-    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatId}" "${url}" -o "${outputPath}"`;
+    // Strict format prioritization with auto-merge features
+    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatId}" --merge-output-format mp4 "${url}" -o "${outputPath}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
         if (err || !fs.existsSync(outputPath)) {
-            const fallbackCommand = `yt-dlp --no-check-certificates "${url}" -o "${outputPath}"`;
+            // Absolute direct raw fallback if complex merge fails due to ffmpeg quirks
+            const fallbackCommand = `yt-dlp --no-check-certificates -f "best" "${url}" -o "${outputPath}"`;
             
             exec(fallbackCommand, { maxBuffer: 1024 * 1024 * 100 }, (fErr) => {
                 if(fErr || !fs.existsSync(outputPath)) {
