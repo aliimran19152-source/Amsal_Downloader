@@ -11,7 +11,7 @@ if (!fs.existsSync(TMP_DIR)) {
     fs.mkdirSync(TMP_DIR, { recursive: true });
 }
 
-// Auto-clean temporary downloads older than 1 hour
+// Auto cleanup temporary downloads older than 1 hour
 setInterval(() => {
     fs.readdir(TMP_DIR, (err, files) => {
         if (err) return;
@@ -25,7 +25,7 @@ setInterval(() => {
             });
         });
     });
-}, 1800000); // Runs every 30 mins
+}, 1800000);
 
 let YTDLP = 'yt-dlp';
 if (fs.existsSync(path.join(__dirname, 'yt-dlp'))) {
@@ -36,7 +36,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('.'));
 
-// High-reliability flags to bypass YouTube blocks and strict headers
+// High-reliability flags to bypass YouTube datacenter blocking & extract raw streams
 const ENGINE_FLAGS = '--no-check-certificate --no-warnings --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" --extractor-args "youtube:player_client=mweb,android,ios"';
 
 function cleanUrl(rawUrl) {
@@ -61,7 +61,7 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AMSAL STUDIOS - ULTIMATE WORKSTATION</title>
+        <title>AMSAL STUDIOS - MEDIA ENGINE</title>
         <style>
             body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; padding: 20px; }
             .container { max-width: 650px; margin: 30px auto; background: #161b22; padding: 30px; border-radius: 16px; border: 2px solid #00f2fe; box-shadow: 0 0 20px rgba(0, 242, 254, 0.2); }
@@ -90,7 +90,7 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <h1>AMSAL STUDIOS</h1>
-            <div class="badge">ULTIMATE CORE WORKSTATION</div>
+            <div class="badge">PREMIUM CORE WORKSTATION</div>
             
             <div class="tabs">
                 <div class="tab active" onclick="switchTab('video-sec', this)">Video Engine</div>
@@ -101,14 +101,14 @@ app.get('/', (req, res) => {
             <div id="video-sec" class="form-section active">
                 <form id="fetchForm">
                     <label>Target Media URL (Video)</label>
-                    <input type="text" id="urlInput" placeholder="Paste Link (YouTube, Insta, TikTok, Facebook, Pinterest...)" required>
-                    <button type="submit" class="btn-fetch">Fetch Video Details & Qualities</button>
+                    <input type="text" id="urlInput" placeholder="Paste Link (YouTube, Insta, TikTok, Facebook, etc.)" required>
+                    <button type="submit" class="btn-fetch">Fetch Video Qualities</button>
                 </form>
 
                 <div id="previewCard" class="preview-card">
                     <div id="videoTitle" class="preview-title">Video Title</div>
                     <img id="videoThumb" src="" alt="Thumbnail">
-                    <label>Select Premium Quality</label>
+                    <label>Select Quality</label>
                     <select id="qualityDropdown" class="quality-select"></select>
                     <button id="startDownloadBtn" class="btn-download">Download Selected Video</button>
                 </div>
@@ -118,16 +118,16 @@ app.get('/', (req, res) => {
             <div id="audio-sec" class="form-section">
                 <form id="audioFetchForm">
                     <label>Target Media URL (Audio Extract)</label>
-                    <input type="text" id="audioUrlInput" placeholder="Paste link to extract pure HQ Audio" required>
-                    <button type="submit" class="btn-audio-fetch">Fetch Audio Details & Bitrates</button>
+                    <input type="text" id="audioUrlInput" placeholder="Paste link to extract pure Audio" required>
+                    <button type="submit" class="btn-audio-fetch">Fetch Audio Bitrates</button>
                 </form>
 
                 <div id="audioPreviewCard" class="preview-card">
                     <div id="audioTitle" class="preview-title">Audio Title</div>
                     <img id="audioThumb" src="" alt="Thumbnail">
-                    <label>Select Audio Bitrate</label>
+                    <label>Select Audio Quality</label>
                     <select id="audioQualityDropdown" class="quality-select"></select>
-                    <button id="startAudioDownloadBtn" class="btn-download" style="background: linear-gradient(45deg, #ff007f, #7f00ff); color: #fff;">Extract Selected Audio</button>
+                    <button id="startAudioDownloadBtn" class="btn-download" style="background: linear-gradient(45deg, #ff007f, #7f00ff); color: #fff;">Extract Audio</button>
                 </div>
             </div>
 
@@ -155,7 +155,7 @@ app.get('/', (req, res) => {
                 
                 previewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching video formats and metadata...";
+                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching video details...";
                 
                 try {
                     const response = await fetch('/api/fetch-info', {
@@ -200,7 +200,7 @@ app.get('/', (req, res) => {
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "💎 <b>[Processing Core]:</b> Syncing & downloading high bitrate stream...";
+                statusPanel.innerHTML = "💎 <b>[Processing]:</b> Downloading video stream...";
                 
                 try {
                     const response = await fetch('/api/prepare-video', {
@@ -210,7 +210,7 @@ app.get('/', (req, res) => {
                     });
                     const data = await response.json();
                     if(data.success) {
-                        statusPanel.innerHTML = "🔥 <b>[Master Synced]:</b> Starting file download...";
+                        statusPanel.innerHTML = "🔥 <b>[Completed]:</b> Download starting...";
                         window.location.href = "/api/chrome-popup?file=" + encodeURIComponent(data.filename);
                     } else {
                         statusPanel.innerHTML = "❌ <b>[Extraction Error]:</b> " + data.message;
@@ -229,7 +229,7 @@ app.get('/', (req, res) => {
                 
                 audioPreviewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "🎵 <b>[Audio Analyzer]:</b> Extracting audio tracks and quality tiers...";
+                statusPanel.innerHTML = "🎵 <b>[Analyzing]:</b> Extracting audio track info...";
                 
                 try {
                     const response = await fetch('/api/fetch-info', {
@@ -241,7 +241,7 @@ app.get('/', (req, res) => {
                     
                     if(data.success) {
                         statusPanel.style.display = 'none';
-                        document.getElementById('audioTitle').innerHTML = "🎵 <b>Audio Title:</b> " + data.title;
+                        document.getElementById('audioTitle').innerHTML = "🎵 <b>Title:</b> " + data.title;
                         if(data.thumbnail) {
                             document.getElementById('audioThumb').src = data.thumbnail;
                             document.getElementById('audioThumb').style.display = 'block';
@@ -269,21 +269,20 @@ app.get('/', (req, res) => {
             });
 
             document.getElementById('startAudioDownloadBtn').addEventListener('click', async () => {
-                const quality = document.getElementById('audioQualityDropdown').value;
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "🎛️ <b>[Master Studio Engine]:</b> Extracting clean audio track...";
+                statusPanel.innerHTML = "🎛️ <b>[Processing]:</b> Extracting audio file...";
                 
                 try {
                     const response = await fetch('/api/prepare-audio', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: currentAudioUrl, quality })
+                        body: JSON.stringify({ url: currentAudioUrl })
                     });
                     const data = await response.json();
                     if(data.success) {
-                        statusPanel.innerHTML = "🔥 <b>[Audio Ripped]:</b> Starting download...";
+                        statusPanel.innerHTML = "🔥 <b>[Completed]:</b> Download starting...";
                         window.location.href = "/api/chrome-popup?file=" + encodeURIComponent(data.filename);
                     } else {
                         statusPanel.innerHTML = "❌ <b>[Extraction Error]:</b> " + data.message;
@@ -307,82 +306,57 @@ app.post('/api/fetch-info', (req, res) => {
     const command = `${YTDLP} ${ENGINE_FLAGS} --dump-json "${targetUrl}"`;
     
     exec(command, { maxBuffer: 1024 * 1024 * 30 }, (err, stdout) => {
-        if (err || !stdout) return res.json({ success: false, message: "Could not parse media link. Verify URL or try again." });
+        if (err || !stdout) {
+            return res.json({ success: false, message: "Could not parse media link. Verify URL or try again." });
+        }
         
         try {
             const meta = JSON.parse(stdout);
             const rawFormats = meta.formats || [];
-            const duration = meta.duration || 0;
             
             if (type === 'audio') {
-                const audioTiers = [
-                    { id: "320K", label: "Studio Master (High Quality)", bitrate: 320 },
-                    { id: "256K", label: "Medium Quality", bitrate: 256 },
-                    { id: "128K", label: "Standard Quality", bitrate: 128 }
-                ];
-                
-                let availableAudio = [];
-                audioTiers.forEach(tier => {
-                    let sizeLabel = duration > 0 ? `~${((tier.bitrate * duration) / 8 / 1024).toFixed(1)} MB` : "~3-8 MB";
-                    availableAudio.push({
-                        id: tier.id,
-                        label: `${tier.label} [${sizeLabel}]`
-                    });
-                });
-
                 return res.json({
                     success: true,
                     title: meta.title || "Extracted Audio Track",
                     thumbnail: meta.thumbnail || "",
-                    formats: availableAudio
+                    formats: [{ id: "bestaudio", label: "Best Available Audio Track (HQ)" }]
                 });
             }
 
-            // Video Engine Sizing & Formats
-            const qualityTiers = [
-                { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", refBitrate: 25000 },
-                { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", refBitrate: 12000 },
-                { maxH: 1440, minH: 1081, label: "1080p Full HD", refBitrate: 6000 },
-                { maxH: 1080, minH: 721,  label: "720p HD", refBitrate: 3000 },
-                { maxH: 720,  minH: 481,  label: "480p HQ", refBitrate: 1500 },
-                { maxH: 480,  minH: 0,    label: "360p Standard", refBitrate: 800 }
-            ];
-            
-            let availableOptions = [];
-            let maxFoundHeight = 0;
+            // --- FLEXIBLE QUALITY PARSING ---
+            let heightsFound = new Set();
             rawFormats.forEach(f => {
-                if (f.height > maxFoundHeight) maxFoundHeight = f.height;
-            });
-            if (maxFoundHeight === 0 && rawFormats.length > 0) maxFoundHeight = meta.height || 720;
-
-            qualityTiers.forEach(tier => {
-                const hasStream = rawFormats.some(f => f.height > tier.minH && f.height <= tier.maxH) || (tier.maxH === 720 && maxFoundHeight >= 720);
-                if (hasStream && tier.maxH <= (maxFoundHeight + 100)) {
-                    const validStreams = rawFormats.filter(f => f.height > tier.minH && f.height <= tier.maxH);
-                    validStreams.sort((a, b) => (b.tbr || b.filesize || 0) - (a.tbr || a.filesize || 0));
-                    const bestStream = validStreams[0];
-                    let sizeLabel = "";
-                    let bytes = bestStream ? (bestStream.filesize || bestStream.filesize_approx) : null;
-                    
-                    if (bytes) {
-                        sizeLabel = `~${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-                    } else if (duration > 0) {
-                        sizeLabel = `~${((tier.refBitrate * duration) / 8 / 1024).toFixed(1)} MB`;
-                    } else {
-                        sizeLabel = tier.maxH === 1080 ? "~15-30 MB" : "~8-15 MB";
-                    }
-
-                    const formatSelector = bestStream 
-                        ? `bestvideo[format_id=${bestStream.format_id}]+bestaudio/bestvideo[height<=${tier.maxH}]+bestaudio/best`
-                        : `bestvideo[height<=${tier.maxH}]+bestaudio/best`;
-
-                    availableOptions.push({ id: formatSelector, label: `${tier.label} [${sizeLabel}]`, disabled: false });
-                } else {
-                    availableOptions.push({ id: "disabled", label: `${tier.label} - [Unavailable]`, disabled: true });
+                if (f.height && f.height > 0) {
+                    heightsFound.add(f.height);
                 }
             });
 
-            res.json({ success: true, title: meta.title || "External Video Stream", thumbnail: meta.thumbnail || "", formats: availableOptions });
+            const sortedHeights = Array.from(heightsFound).sort((a, b) => b - a);
+            let availableOptions = [];
+
+            if (sortedHeights.length > 0) {
+                sortedHeights.forEach(h => {
+                    let label = `${h}p Quality`;
+                    if (h >= 2160) label = `4K UHD (${h}p)`;
+                    else if (h >= 1440) label = `2K QuadHD (${h}p)`;
+                    else if (h >= 1080) label = `${h}p Full HD`;
+                    else if (h >= 720) label = `${h}p HD`;
+
+                    const selector = `bestvideo[height<=${h}]+bestaudio/best[height<=${h}]/best`;
+                    availableOptions.push({ id: selector, label: label, disabled: false });
+                });
+            }
+
+            // Always provide high-compatibility fallback options so dropdown is never empty/unavailable
+            availableOptions.push({ id: "bestvideo+bestaudio/best", label: "Best Available (Highest Resolution)", disabled: false });
+            availableOptions.push({ id: "worstvideo+bestaudio/worst", label: "Fast Download (Low Resolution)", disabled: false });
+
+            res.json({
+                success: true,
+                title: meta.title || "External Video Stream",
+                thumbnail: meta.thumbnail || "",
+                formats: availableOptions
+            });
 
         } catch (e) {
             res.json({ success: false, message: "Error compiling video stream options." });
@@ -402,10 +376,10 @@ app.post('/api/prepare-video', (req, res) => {
     exec(cmd, { maxBuffer: 1024 * 1024 * 100 }, (err) => {
         if (err || !fs.existsSync(outputPath)) {
             // High reliability Fallback
-            const fallbackCmd = `${YTDLP} ${ENGINE_FLAGS} -f "bestvideo+bestaudio/best" -o "${outputPath}" "${targetUrl}"`;
+            const fallbackCmd = `${YTDLP} ${ENGINE_FLAGS} -f "best" -o "${outputPath}" "${targetUrl}"`;
             exec(fallbackCmd, (fErr) => {
                 if (fErr || !fs.existsSync(outputPath)) {
-                    return res.json({ success: false, message: "Download failed. The platform might have strict DRM or dynamic block." });
+                    return res.json({ success: false, message: "Download failed. Video might be restricted or unavailable." });
                 }
                 res.json({ success: true, filename: path.basename(outputPath) });
             });
@@ -422,7 +396,7 @@ app.post('/api/prepare-audio', (req, res) => {
 
     const targetUrl = cleanUrl(url);
     const outputPath = path.join(TMP_DIR, `audio_${Date.now()}.m4a`);
-    const cmd = `${YTDLP} ${ENGINE_FLAGS} -f "bestaudio/ba/best" -o "${outputPath}" "${targetUrl}"`;
+    const cmd = `${YTDLP} ${ENGINE_FLAGS} -f "bestaudio/best" -o "${outputPath}" "${targetUrl}"`;
 
     exec(cmd, { maxBuffer: 1024 * 1024 * 100 }, (err) => {
         if (err || !fs.existsSync(outputPath)) {
@@ -440,7 +414,6 @@ app.get('/api/chrome-popup', (req, res) => {
     const filePath = path.join(TMP_DIR, fileName);
     if (fs.existsSync(filePath)) {
         res.download(filePath, (err) => {
-            // Delete file immediately after user finishes downloading
             try { fs.unlinkSync(filePath); } catch(e){}
         });
     } else {
