@@ -1,0 +1,6 @@
+node_modules/
+downloads/
+tmp_downloads/
+*.mp4
+*.mkv
+*.mp3
