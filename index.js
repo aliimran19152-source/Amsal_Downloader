@@ -273,8 +273,14 @@ app.post('/api/fetch-info', (req, res) => {
 
     const command = `yt-dlp --dump-json --no-warnings --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
     
-    exec(command, { maxBuffer: 1024 * 1024 * 15 }, (err, stdout) => {
-        if (err) return res.json({ success: false, message: "Could not parse link or unsupported site." });
+    exec(command, { maxBuffer: 1024 * 1024 * 15 }, (err, stdout, stderr) => {
+        if (err) {
+            console.error("=== YT-DLP FAILED ===");
+            console.error("URL:", url);
+            console.error("STDERR:", stderr);
+            console.error("ERROR:", err.message);
+            return res.json({ success: false, message: "Could not parse link or unsupported site." });
+        }
         
         try {
             const meta = JSON.parse(stdout);
@@ -346,7 +352,6 @@ app.post('/api/fetch-info', (req, res) => {
                         sizeLabel = tier.fallbackSize;
                     }
 
-                    // Direct MP4 fallback query that works locally and remotely
                     const formatSelector = `best[height<=${tier.maxH}]/bestvideo[height<=${tier.maxH}]+bestaudio/best`;
 
                     availableOptions.push({ id: formatSelector, label: `${tier.label} [${sizeLabel}]`, disabled: false });
@@ -373,12 +378,10 @@ app.post('/api/prepare-video', (req, res) => {
     const outputFilename = `video_${Date.now()}.mp4`;
     const outputPath = path.join(TMP_DIR, outputFilename);
     
-    // Auto fallback command without strict path constraints
     const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatId}" "${url}" -o "${outputPath}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
         if (err || !fs.existsSync(outputPath)) {
-            // Absolute direct fallback
             const fallbackCommand = `yt-dlp --no-check-certificates "${url}" -o "${outputPath}"`;
             
             exec(fallbackCommand, { maxBuffer: 1024 * 1024 * 100 }, (fErr) => {
