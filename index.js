@@ -334,6 +334,8 @@ app.post('/api/fetch-info', async (req, res) => {
                                 sizeStr = `~${((f.tbr * meta.duration) / 8 / 1024).toFixed(1)} MB`;
                             }
 
+                            console.log(`FORMAT DEBUG: height=${f.height} format_id=${f.format_id} filesize=${f.filesize} tbr=${f.tbr}`);
+
                             formatsList.push({
                                 id: f.format_id,
                                 label: `🎬 Quality: ${resLabel} | Exact Size: ${sizeStr}`
