@@ -62,11 +62,10 @@ app.get('/', (req, res) => {
                 <div class="tab" onclick="switchTab('audio-sec', this)">Audio Engine</div>
             </div>
 
-            <!-- VIDEO SECTION -->
             <div id="video-sec" class="form-section active">
-                <form id="fetchForm">
+                <form id="fetchForm" autocomplete="off">
                     <label>Target Media URL (Video)</label>
-                    <input type="text" id="urlInput" placeholder="Paste Video Link (YT, Insta, TikTok, Pinterest...)" required>
+                    <input type="text" id="urlInput" placeholder="Paste Video Link (YT, Insta, TikTok, Pinterest...)" autocomplete="off" required>
                     <button type="submit" class="btn-fetch">Fetch Video Details & Qualities</button>
                 </form>
 
@@ -75,15 +74,14 @@ app.get('/', (req, res) => {
                     <img id="videoThumb" src="" alt="Thumbnail">
                     <label>Select Quality Option</label>
                     <select id="qualityDropdown" class="quality-select"></select>
-                    <button id="startDownloadBtn" class="btn-download">Download Best Resolution</button>
+                    <button id="startDownloadBtn" class="btn-download">Download In Selected Quality</button>
                 </div>
             </div>
 
-            <!-- AUDIO SECTION -->
             <div id="audio-sec" class="form-section">
-                <form id="audioFetchForm">
+                <form id="audioFetchForm" autocomplete="off">
                     <label>Target Media URL (Audio / Sound Extract)</label>
-                    <input type="text" id="audioUrlInput" placeholder="Paste link to extract pure HQ Audio/Music" required>
+                    <input type="text" id="audioUrlInput" placeholder="Paste link to extract pure HQ Audio/Music" autocomplete="off" required>
                     <button type="submit" class="btn-audio-fetch">Fetch Audio Details & Bitrates</button>
                 </form>
 
@@ -111,7 +109,6 @@ app.get('/', (req, res) => {
                 document.getElementById('download-status').style.display = 'none';
             }
 
-            // --- VIDEO ENGINE ACTIONS ---
             document.getElementById('fetchForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const url = document.getElementById('urlInput').value;
@@ -121,7 +118,7 @@ app.get('/', (req, res) => {
                 
                 previewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching media meta-data...";
+                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching media meta-data & sizes...";
                 
                 try {
                     const response = await fetch('/api/fetch-info', {
@@ -165,7 +162,7 @@ app.get('/', (req, res) => {
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "💎 <b>[Raw Uncompressed Engine]:</b> Fetching maximum bitrate stream...";
+                statusPanel.innerHTML = "💎 <b>[Raw Stream Engine]:</b> Downloading absolute original bitrate file...";
                 
                 try {
                     const response = await fetch('/api/prepare-video', {
@@ -185,7 +182,6 @@ app.get('/', (req, res) => {
                 }
             });
 
-            // --- AUDIO ENGINE ACTIONS ---
             document.getElementById('audioFetchForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const url = document.getElementById('audioUrlInput').value;
@@ -271,12 +267,8 @@ app.post('/api/fetch-info', (req, res) => {
 
     const command = `yt-dlp --dump-json --no-warnings --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
     
-    exec(command, { maxBuffer: 1024 * 1024 * 15 }, (err, stdout, stderr) => {
+    exec(command, { maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
         if (err) {
-            console.error("=== YT-DLP FAILED ===");
-            console.error("URL:", url);
-            console.error("STDERR:", stderr);
-            console.error("ERROR:", err.message);
             return res.json({ success: false, message: "Could not parse link or unsupported site." });
         }
         
@@ -294,15 +286,51 @@ app.post('/api/fetch-info', (req, res) => {
                 });
             }
 
-            // Simple & Direct: Absolute Highest Available Quality without Format Constraints
+            let mappedFormats = [];
+            
+            if (meta.formats && meta.formats.length > 0) {
+                // Filter out and clean up all formats with real sizes and exact labels
+                meta.formats.forEach(f => {
+                    let resolution = f.height ? `${f.height}p` : f.resolution || '';
+                    if (!resolution && f.vcodec !== 'none') resolution = 'Video Stream';
+                    
+                    if (f.vcodec !== 'none' || f.acodec !== 'none') {
+                        let sizeStr = '';
+                        if (f.filesize) {
+                            sizeStr = ` (~${(f.filesize / (1024 * 1024)).toFixed(2)} MB)`;
+                        } else if (f.filesize_approx) {
+                            sizeStr = ` (~${(f.filesize_approx / (1024 * 1024)).toFixed(2)} MB)`;
+                        }
+                        
+                        let label = `${resolution} | Ext: ${f.ext.toUpperCase()} | Codec: ${f.vcodec || 'N/A'}${sizeStr}`;
+                        
+                        mappedFormats.push({
+                            id: f.format_id,
+                            label: label,
+                            height: f.height || 0
+                        });
+                    }
+                });
+            }
+
+            // Unko clear resolution sequence wise sort karo
+            mappedFormats.sort((a, b) => b.height - a.height);
+
+            // Add Universal Best Top Option (Strict Uncompressed)
+            mappedFormats.unshift({
+                id: "bestvideo+bestaudio/best",
+                label: "🌟 Absolute Uncompressed Best Quality (12.5MB+ Exact Original Raw Dynamic Size)"
+            });
+
+            if (mappedFormats.length === 1) {
+                mappedFormats.push({ id: "best", label: "Standard Progressive Stream" });
+            }
+
             res.json({ 
                 success: true, 
                 title: meta.title || "External Video Stream", 
                 thumbnail: meta.thumbnail || "", 
-                formats: [
-                    { id: "bestvideo+bestaudio/best", label: "Absolute Best / Highest Quality Available (Uncompressed)" },
-                    { id: "best", label: "Original Single Stream (Fast Sync)" }
-                ] 
+                formats: mappedFormats 
             });
 
         } catch (e) {
@@ -314,29 +342,33 @@ app.post('/api/fetch-info', (req, res) => {
 // --- ROUTE: VIDEO DOWNLOAD ENGINE ---
 app.post('/api/prepare-video', (req, res) => {
     const { url, formatId } = req.body;
-    if (!url) {
-        return res.json({ success: false, message: "Invalid URL." });
-    }
+    if (!url) return res.json({ success: false, message: "Invalid URL." });
 
     const outputFilename = `video_${Date.now()}.%(ext)s`;
     const outputPath = path.join(TMP_DIR, outputFilename);
-    const targetFormat = formatId || "bestvideo+bestaudio/best";
     
-    // Command allows yt-dlp to grab raw best quality file extension automatically
-    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${targetFormat}" "${url}" -o "${outputPath}"`;
+    // Strict direct selection without conversion limits to prevent dropping bitrate to 4MB
+    let formatSelector = formatId || "bestvideo+bestaudio/best";
+    
+    // Agar custom format choose kia ho jo separate video ho, to automatically sound merge force krein
+    if (formatSelector !== "bestvideo+bestaudio/best" && !formatSelector.includes('+')) {
+        formatSelector = `${formatSelector}+bestaudio/best`;
+    }
 
-    exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
+    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatSelector}" "${url}" -o "${outputPath}"`;
+
+    exec(command, { maxBuffer: 1024 * 1024 * 200 }, (err, stdout, stderr) => {
         const files = fs.readdirSync(TMP_DIR);
         const downloadedFile = files.find(f => f.startsWith(`video_${outputFilename.split('_')[1].split('.')[0]}`));
 
         if (err || !downloadedFile) {
-            console.error("Primary download failed, attempting fallback:", stderr);
-            const fallbackPath = path.join(TMP_DIR, `fallback_${Date.now()}.mp4`);
-            const fallbackCommand = `yt-dlp --no-check-certificates "${url}" -o "${fallbackPath}"`;
+            console.error("Muxing error, trying standard extraction fallback...");
+            const fallbackPath = path.join(TMP_DIR, `video_fallback_${Date.now()}.mp4`);
+            const fallbackCommand = `yt-dlp --no-check-certificates -f "best" "${url}" -o "${fallbackPath}"`;
             
-            exec(fallbackCommand, { maxBuffer: 1024 * 1024 * 100 }, (fErr) => {
+            exec(fallbackCommand, { maxBuffer: 1024 * 1024 * 200 }, (fErr) => {
                 if(fErr || !fs.existsSync(fallbackPath)) {
-                    return res.json({ success: false, message: "Download failed on server." });
+                    return res.json({ success: false, message: "Download pipeline extraction failed." });
                 }
                 res.json({ success: true, filename: path.basename(fallbackPath) });
             });
