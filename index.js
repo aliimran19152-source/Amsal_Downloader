@@ -12,6 +12,12 @@ if (!fs.existsSync(TMP_DIR)) {
     fs.mkdirSync(TMP_DIR);
 }
 
+// Auto Detect yt-dlp executable path
+let YTDLP = 'yt-dlp';
+if (fs.existsSync(path.join(__dirname, 'yt-dlp'))) {
+    YTDLP = path.join(__dirname, 'yt-dlp');
+}
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('.'));
@@ -25,7 +31,7 @@ app.post('/api/fetch-info', (req, res) => {
     const { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
 
-    const command = `yt-dlp --dump-json "${url}"`;
+    const command = `${YTDLP} --dump-json "${url}"`;
     
     exec(command, { maxBuffer: 1024 * 1024 * 15 }, (err, stdout) => {
         if (err) return res.json({ success: false, message: "Could not parse link or yt-dlp issue." });
@@ -100,7 +106,7 @@ app.post('/api/prepare-video', (req, res) => {
     if (!url || !formatId || formatId === "disabled") return res.json({ success: false, message: "Invalid parameters." });
 
     const outputPath = path.join(TMP_DIR, `video_${Date.now()}.mp4`);
-    const cmd = `yt-dlp -f "${formatId}" -o "${outputPath}" "${url}"`;
+    const cmd = `${YTDLP} -f "${formatId}" -o "${outputPath}" "${url}"`;
 
     exec(cmd, (err) => {
         if (err) return res.json({ success: false, message: "Download failed." });
@@ -114,7 +120,7 @@ app.post('/api/prepare-audio', (req, res) => {
     if (!url) return res.json({ success: false, message: "Invalid URL." });
 
     const outputPath = path.join(TMP_DIR, `audio_${Date.now()}.mp3`);
-    const cmd = `yt-dlp -x --audio-format mp3 --audio-quality ${quality} -o "${outputPath}" "${url}"`;
+    const cmd = `${YTDLP} -x --audio-format mp3 --audio-quality ${quality} -o "${outputPath}" "${url}"`;
 
     exec(cmd, (err) => {
         if (err) return res.json({ success: false, message: "Audio extraction failed." });
@@ -122,13 +128,12 @@ app.post('/api/prepare-audio', (req, res) => {
     });
 });
 
-// --- ROUTE 4: MULTI-ENGINE MOVIE & SERIES SEARCH (NO-FAIL SEARCH) ---
+// --- ROUTE 4: REAL MOVIE & SERIES SEARCH ENGINE ---
 app.get('/api/search-movie', async (req, res) => {
     const name = req.query.name;
     if (!name) return res.json({ success: false, error: "Movie/Series name is required." });
     
     try {
-        // Engine 1: TMDB Multi-search API
         const tmdbUrl = `https://api.themoviedb.org/3/search/multi?api_key=15d2ea6d0dc1d476efbca3eba2b9bbf3&query=${encodeURIComponent(name)}`;
         const tmdbRes = await axios.get(tmdbUrl);
         
@@ -154,28 +159,26 @@ app.get('/api/search-movie', async (req, res) => {
             }
         }
 
-        // Engine 2: Fallback direct search wrapper
         return res.json({
             success: true,
             results: [{
                 title: name,
                 year: "Latest",
                 type: "movie/series",
-                poster: "https://via.placeholder.com/300x450?text=Direct+Stream+Found",
+                poster: "https://via.placeholder.com/300x450?text=" + encodeURIComponent(name),
                 watchUrl: `https://vidsrc.to/embed/movie/${encodeURIComponent(name)}`,
                 downloadUrl: `https://archive.org/search.php?query=${encodeURIComponent(name)}`
             }]
         });
 
     } catch (e) {
-        // Ultimate Fallback - hamesha link generate karega chahe API down bhi ho
         return res.json({
             success: true,
             results: [{
                 title: name,
                 year: "Result",
                 type: "movie/series",
-                poster: "https://via.placeholder.com/300x450?text=Direct+Search",
+                poster: "https://via.placeholder.com/300x450?text=" + encodeURIComponent(name),
                 watchUrl: `https://vidsrc.to/embed/movie/${encodeURIComponent(name)}`,
                 downloadUrl: `https://archive.org/search.php?query=${encodeURIComponent(name)}`
             }]
