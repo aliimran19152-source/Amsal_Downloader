@@ -2,7 +2,6 @@ const express = require('express');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const chalk = require('chalk');
 const http = require('http');
 const https = require('https');
 
@@ -17,7 +16,7 @@ if (!fs.existsSync(TMP_DIR)) {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Remote file size fetcher via HTTP HEAD
+// Remote size helper via HTTP HEAD request
 function getRemoteSize(url) {
     return new Promise((resolve) => {
         if (!url) return resolve(0);
@@ -83,6 +82,7 @@ app.get('/', (req, res) => {
                 <div class="tab" onclick="switchTab('audio-sec', this)">Audio Engine</div>
             </div>
 
+            <!-- VIDEO SECTION -->
             <div id="video-sec" class="form-section active">
                 <form id="fetchForm" autocomplete="off">
                     <label>Target Media URL (Video)</label>
@@ -99,6 +99,7 @@ app.get('/', (req, res) => {
                 </div>
             </div>
 
+            <!-- AUDIO SECTION -->
             <div id="audio-sec" class="form-section">
                 <form id="audioFetchForm" autocomplete="off">
                     <label>Target Media URL (Audio / Sound Extract)</label>
@@ -183,7 +184,7 @@ app.get('/', (req, res) => {
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "💎 <b>[HD Extraction]:</b> Compiling exact selected resolution track with HQ Audio...";
+                statusPanel.innerHTML = "💎 <b>[Processing]:</b> Merging exact selected stream quality with audio...";
                 
                 try {
                     const response = await fetch('/api/prepare-video', {
@@ -196,10 +197,10 @@ app.get('/', (req, res) => {
                         statusPanel.innerHTML = "🔥 <b>[Master Synced]:</b> Initializing download...";
                         window.location.href = "/api/chrome-popup?file=" + encodeURIComponent(data.filename);
                     } else {
-                        statusPanel.innerHTML = "❌ <b>[Extraction Error]:</b> " + data.message;
+                        statusPanel.innerHTML = "❌ <b>[Download Error]:</b> " + data.message;
                     }
                 } catch(err) {
-                    statusPanel.innerHTML = "❌ <b>[Pipeline Timeout]:</b> Server error.";
+                    statusPanel.innerHTML = "❌ <b>[Pipeline Timeout]:</b> Server response error.";
                 }
             });
 
@@ -337,7 +338,6 @@ app.post('/api/fetch-info', async (req, res) => {
                 }
             }
 
-            // Unshift exact raw top-level dynamic instruction
             formatsList.unshift({
                 id: "bestvideo+bestaudio/best",
                 label: "🌟 Absolute Highest Combined Stream (Uncompressed)"
@@ -356,7 +356,7 @@ app.post('/api/fetch-info', async (req, res) => {
     });
 });
 
-// --- VIDEO PREPARE ENGINE (FIXED MERGING LOCK) ---
+// --- VIDEO PREPARE ENGINE (STRICT DIRECT DOWNLOAD & MERGE) ---
 app.post('/api/prepare-video', (req, res) => {
     const { url, formatId } = req.body;
     if (!url) return res.json({ success: false, message: "Invalid URL." });
@@ -365,31 +365,20 @@ app.post('/api/prepare-video', (req, res) => {
     const outputFilename = `video_${uniqueId}.mp4`;
     const outputPath = path.join(TMP_DIR, outputFilename);
     
-    // Crucial Update: If any custom ID is selected, force it to merge with bestaudio, 
-    // otherwise fallback to full absolute uncompressed merge directly. 
-    // This stops the engine from falling back to the default 4.08MB stream.
-    let targetFormat = formatId;
-    if (targetFormat && targetFormat !== "bestvideo+bestaudio/best") {
+    // Construct strict target format without falling back silently
+    let targetFormat = formatId || "best";
+    if (targetFormat !== "best" && targetFormat !== "bestvideo+bestaudio/best") {
         targetFormat = `${targetFormat}+bestaudio/best`;
-    } else {
-        targetFormat = "bestvideo+bestaudio/best";
     }
 
     const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${targetFormat}" --merge-output-format mp4 "${url}" -o "${outputPath}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 300 }, (err) => {
-        // Strict file verification without using dynamic compression fallbacks
         if (err || !fs.existsSync(outputPath)) {
-            // Secondary direct uncompressed single target force link extraction
-            const singleForceCommand = `yt-dlp --no-check-certificates -f "best" "${url}" -o "${outputPath}"`;
-            
-            exec(singleForceCommand, { maxBuffer: 1024 * 1024 * 300 }, (fErr) => {
-                if(fErr || !fs.existsSync(outputPath)) {
-                    return res.json({ success: false, message: "Download pipeline track merging failed." });
-                }
-                res.json({ success: true, filename: outputFilename });
+            return res.json({ 
+                success: false, 
+                message: "Download failed. Make sure 'ffmpeg' is installed in Termux (`pkg install ffmpeg`). Error details: " + (err ? err.message : 'File missing') 
             });
-            return;
         }
         res.json({ success: true, filename: outputFilename });
     });
