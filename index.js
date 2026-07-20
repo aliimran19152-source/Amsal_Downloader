@@ -1,280 +1,321 @@
 const express = require('express');
-const path = require('path');
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- HTML FRONTEND INTERFACE ---
-app.get('/', (req, res) => {
-    res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AMSAL STUDIOS WORKSTATION</title>
-        <style>
-            * { box-sizing: border-box; }
-            body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; padding: 20px; margin: 0; }
-            .container { max-width: 650px; margin: 20px auto; background: #161b22; padding: 30px; border-radius: 16px; border: 2px solid #00f2fe; box-shadow: 0 0 20px rgba(0, 242, 254, 0.2); }
-            h1 { color: #00f2fe; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 5px; font-size: 24px; }
-            .badge { background: #ffbc00; color: #000; font-size: 12px; font-weight: bold; padding: 4px 12px; border-radius: 12px; display: inline-block; margin-bottom: 25px; }
-            label { display: block; text-align: left; font-weight: bold; margin-bottom: 8px; color: #8b949e; font-size: 13px; text-transform: uppercase; }
-            input[type="text"] { width: 100%; padding: 14px; margin-bottom: 20px; border: 1px solid #30363d; background: #0d1117; color: #fff; border-radius: 8px; font-size: 15px; outline: none; }
-            input[type="text"]:focus { border-color: #00f2fe; box-shadow: 0 0 8px rgba(0, 242, 254, 0.5); }
-            
-            button { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-bottom: 15px; text-transform: uppercase; }
-            .btn-fetch { background: linear-gradient(45deg, #00f2fe, #4facfe); color: #000; }
-            .btn-audio-fetch { background: linear-gradient(45deg, #ff007f, #7f00ff); color: #fff; }
-            .btn-download { display: block; width: 100%; text-decoration: none; text-align: center; padding: 15px; border-radius: 8px; font-size: 15px; font-weight: bold; background: linear-gradient(45deg, #00ff87, #60efff); color: #000; margin-top: 10px; }
-            button:hover, .btn-download:hover { transform: scale(1.02); opacity: 0.9; }
-            button:disabled { opacity: 0.5; cursor: not-allowed; }
-            
-            .status { background: #21262d; border-left: 4px solid #00f2fe; padding: 15px; text-align: left; border-radius: 4px; font-size: 14px; display: none; margin-top: 15px; line-height: 1.5; word-break: break-all; }
-            
-            .preview-card { background: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-top: 20px; display: none; text-align: left; }
-            .preview-card img { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid #444; display: block; max-height: 300px; object-fit: cover; }
-            .preview-title { font-weight: bold; font-size: 15px; color: #fff; margin-bottom: 15px; line-height: 1.4; background: #21262d; padding: 10px; border-radius: 6px; border-left: 3px solid #ffbc00; }
-            
-            .tabs { display: flex; justify-content: space-around; margin-bottom: 20px; border-bottom: 1px solid #30363d; }
-            .tab { padding: 10px 20px; cursor: pointer; color: #8b949e; font-weight: bold; }
-            .tab.active { color: #00f2fe; border-bottom: 2px solid #00f2fe; }
-            .form-section { display: none; }
-            .form-section.active { display: block; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
+// ==========================================
+// 1. FRONTEND: PREMIUM UI (HTML/CSS/JS)
+// ==========================================
+const frontendHTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMSAL STUDIOS - WORKSTATION</title>
+    <style>
+        :root {
+            --bg-main: #090c10;
+            --bg-card: #161b22;
+            --accent: #00f2fe;
+            --accent-audio: #ff007f;
+            --text-main: #c9d1d9;
+            --text-muted: #8b949e;
+            --border: #30363d;
+        }
+        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body { background: var(--bg-main); color: var(--text-main); margin: 0; padding: 20px; display: flex; justify-content: center; min-height: 100vh; }
+        
+        .app-container { width: 100%; max-width: 600px; background: var(--bg-card); padding: 30px; border-radius: 16px; border: 1px solid var(--accent); box-shadow: 0 10px 30px rgba(0, 242, 254, 0.1); align-self: flex-start; margin-top: 20px; }
+        
+        .header { text-align: center; margin-bottom: 30px; }
+        .header h1 { color: var(--accent); margin: 0 0 5px 0; font-size: 26px; letter-spacing: 2px; text-transform: uppercase; }
+        .badge { background: #ffbc00; color: #000; font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 20px; letter-spacing: 1px; }
+
+        .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 25px; }
+        .tab { flex: 1; text-align: center; padding: 12px; cursor: pointer; color: var(--text-muted); font-weight: 600; transition: 0.3s; }
+        .tab.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+        .tab[data-target="audio"].active { color: var(--accent-audio); border-bottom-color: var(--accent-audio); }
+
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+        .form-group input { width: 100%; padding: 15px; background: var(--bg-main); border: 1px solid var(--border); color: #fff; border-radius: 8px; font-size: 15px; outline: none; transition: 0.3s; }
+        .form-group input:focus { border-color: var(--accent); }
+
+        .btn { width: 100%; padding: 16px; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; text-transform: uppercase; transition: transform 0.2s, opacity 0.2s; color: #000; }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-video { background: linear-gradient(135deg, #00f2fe, #4facfe); }
+        .btn-audio { background: linear-gradient(135deg, #ff007f, #7f00ff); color: #fff; }
+        .btn-download { display: block; text-align: center; text-decoration: none; margin-top: 15px; background: linear-gradient(135deg, #00b09b, #96c93d); }
+
+        .section { display: none; }
+        .section.active { display: block; animation: fadeIn 0.4s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Status & Loader */
+        .status-box { margin-top: 20px; padding: 15px; border-radius: 8px; background: #21262d; border-left: 4px solid var(--accent); font-size: 14px; display: none; }
+        .status-box.error { border-color: #ff4444; }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; margin-right: 8px; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Result Card */
+        .result-card { background: var(--bg-main); border: 1px solid var(--border); border-radius: 12px; padding: 15px; margin-top: 25px; display: none; }
+        .result-card img { width: 100%; max-height: 250px; object-fit: cover; border-radius: 8px; margin-bottom: 15px; border: 1px solid #333; }
+        .result-title { font-size: 15px; font-weight: 600; line-height: 1.4; margin-bottom: 15px; padding: 10px; background: #21262d; border-radius: 6px; }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <div class="header">
             <h1>AMSAL STUDIOS</h1>
-            <div class="badge">PREMIUM CORE WORKSTATION</div>
-            
-            <div class="tabs">
-                <div class="tab active" onclick="switchTab('video-sec', this)">Video Engine</div>
-                <div class="tab" onclick="switchTab('audio-sec', this)">Audio Engine</div>
-            </div>
-
-            <!-- VIDEO SECTION -->
-            <div id="video-sec" class="form-section active">
-                <div>
-                    <label>Target Media URL (Video)</label>
-                    <input type="text" id="urlInput" placeholder="Paste Video Link (YT Shorts/Video, TikTok, Insta...)">
-                    <button type="button" class="btn-fetch" id="btnVideoFetch" onclick="processMedia('video')">Fetch Video Details</button>
-                </div>
-
-                <div id="previewCard" class="preview-card">
-                    <div id="videoTitle" class="preview-title">Video Title</div>
-                    <img id="videoThumb" src="" alt="Thumbnail">
-                    <a id="startDownloadBtn" class="btn-download" href="#" target="_blank" rel="noopener">⬇️ DOWNLOAD VIDEO FILE</a>
-                </div>
-            </div>
-
-            <!-- AUDIO SECTION -->
-            <div id="audio-sec" class="form-section">
-                <div>
-                    <label>Target Media URL (Audio / Sound Extract)</label>
-                    <input type="text" id="audioUrlInput" placeholder="Paste link to extract pure HQ Audio/Music">
-                    <button type="button" class="btn-audio-fetch" id="btnAudioFetch" onclick="processMedia('audio')">Fetch Audio Details</button>
-                </div>
-
-                <div id="audioPreviewCard" class="preview-card">
-                    <div id="audioTitle" class="preview-title">Audio Title</div>
-                    <img id="audioThumb" src="" alt="Thumbnail">
-                    <a id="startAudioDownloadBtn" class="btn-download" style="background: linear-gradient(45deg, #ff007f, #7f00ff); color: #fff;" href="#" target="_blank" rel="noopener">🎵 EXTRACT AUDIO TRACK</a>
-                </div>
-            </div>
-
-            <div id="download-status" class="status"></div>
+            <div class="badge">PRO CORE ENGINE</div>
         </div>
 
-        <script>
-            function switchTab(sectionId, tabEl) {
-                document.querySelectorAll('.form-section').forEach(s => s.classList.remove('active'));
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                document.getElementById(sectionId).classList.add('active');
-                tabEl.classList.add('active');
-                document.getElementById('download-status').style.display = 'none';
-            }
+        <div class="tabs">
+            <div class="tab active" data-target="video" onclick="switchTab('video')">Video Engine</div>
+            <div class="tab" data-target="audio" onclick="switchTab('audio')">Audio Engine</div>
+        </div>
 
-            async function processMedia(type) {
-                const isAudio = type === 'audio';
-                const inputId = isAudio ? 'audioUrlInput' : 'urlInput';
-                const btnId = isAudio ? 'btnAudioFetch' : 'btnVideoFetch';
-                const cardId = isAudio ? 'audioPreviewCard' : 'previewCard';
-                const titleId = isAudio ? 'audioTitle' : 'videoTitle';
-                const thumbId = isAudio ? 'audioThumb' : 'videoThumb';
-                const dlBtnId = isAudio ? 'startAudioDownloadBtn' : 'startDownloadBtn';
+        <!-- VIDEO ENGINE -->
+        <div id="video-section" class="section active">
+            <div class="form-group">
+                <label>Media Link (YouTube, TikTok, Insta)</label>
+                <input type="text" id="video-url" placeholder="Paste link here...">
+            </div>
+            <button class="btn btn-video" id="btn-video" onclick="processMedia('video')">Extract Video</button>
+        </div>
 
-                const urlInput = document.getElementById(inputId);
-                const url = urlInput.value.trim();
-                const statusPanel = document.getElementById('download-status');
-                const card = document.getElementById(cardId);
-                const btn = document.getElementById(btnId);
+        <!-- AUDIO ENGINE -->
+        <div id="audio-section" class="section">
+            <div class="form-group">
+                <label>Media Link (Extract Sound)</label>
+                <input type="text" id="audio-url" placeholder="Paste link here...">
+            </div>
+            <button class="btn btn-audio" id="btn-audio" onclick="processMedia('audio')">Extract Audio Track</button>
+        </div>
 
-                if (!url) {
-                    statusPanel.style.display = 'block';
-                    statusPanel.innerHTML = "⚠️ <b>[Error]:</b> Pehle link paste karein!";
-                    return;
-                }
+        <!-- STATUS MESSAGE -->
+        <div id="status" class="status-box"></div>
 
-                card.style.display = 'none';
-                statusPanel.style.display = 'block';
-                btn.disabled = true;
-                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Express Server extraction in progress...";
+        <!-- RESULT CARD -->
+        <div id="result" class="result-card">
+            <div id="result-title" class="result-title"></div>
+            <img id="result-thumb" src="" alt="Thumbnail" style="display: none;">
+            <a id="result-btn" class="btn btn-download" href="#" target="_blank" rel="noopener">⬇️ Download File</a>
+        </div>
+    </div>
 
-                try {
-                    const response = await fetch('/api/fetch-info', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url, type })
-                    });
-                    const data = await response.json();
+    <script>
+        let currentMode = 'video';
 
-                    btn.disabled = false;
-
-                    if (data.success) {
-                        statusPanel.style.display = 'none';
-                        document.getElementById(titleId).innerHTML = (isAudio ? "🎵 " : "🎬 ") + "<b>Title:</b> " + data.title;
-                        
-                        const thumbEl = document.getElementById(thumbId);
-                        if (data.thumbnail) {
-                            thumbEl.src = data.thumbnail;
-                            thumbEl.style.display = 'block';
-                        } else {
-                            thumbEl.style.display = 'none';
-                        }
-
-                        const dlBtn = document.getElementById(dlBtnId);
-                        dlBtn.href = data.downloadUrl;
-                        card.style.display = 'block';
-                    } else {
-                        statusPanel.innerHTML = "❌ <b>[Extraction Error]:</b> " + (data.message || "Media fetch nahi ho saka.");
-                    }
-                } catch (err) {
-                    btn.disabled = false;
-                    statusPanel.innerHTML = "❌ <b>[Server Error]:</b> Connection reset. Dobara try karein.";
-                }
-            }
-        </script>
-    </body>
-    </html>
-    `);
-});
-
-// --- BACKEND ROUTE ---
-app.post('/api/fetch-info', async (req, res) => {
-    const { url, type } = req.body;
-    if (!url) return res.json({ success: false, message: "URL empty hai." });
-
-    console.log(`[PROCESS] URL: ${url} | Type: ${type}`);
-
-    try {
-        // 1. TikTok Handler (TikWM)
-        if (url.includes('tiktok.com')) {
-            try {
-                const tikRes = await fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(url));
-                const tikData = await tikRes.json();
-                if (tikData && tikData.data) {
-                    const isAudio = type === 'audio';
-                    return res.json({
-                        success: true,
-                        title: tikData.data.title || "TikTok Media",
-                        thumbnail: tikData.data.cover || "",
-                        downloadUrl: isAudio ? (tikData.data.music || tikData.data.play) : (tikData.data.hdplay || tikData.data.play)
-                    });
-                }
-            } catch(e) { console.error("TikWM Error:", e.message); }
+        function switchTab(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.tab').forEach(t => {
+                t.classList.toggle('active', t.getAttribute('data-target') === mode);
+            });
+            document.querySelectorAll('.section').forEach(s => {
+                s.classList.toggle('active', s.id === mode + '-section');
+            });
+            hideStatus();
+            hideResult();
         }
 
-        // 2. Cobalt API Engine
+        function showStatus(html, isError = false) {
+            const el = document.getElementById('status');
+            el.innerHTML = html;
+            el.className = 'status-box' + (isError ? ' error' : '');
+            el.style.display = 'block';
+        }
+        function hideStatus() { document.getElementById('status').style.display = 'none'; }
+        
+        function showResult(title, thumbUrl, downloadUrl) {
+            document.getElementById('result-title').innerText = title;
+            const thumbEl = document.getElementById('result-thumb');
+            if(thumbUrl) { thumbEl.src = thumbUrl; thumbEl.style.display = 'block'; } 
+            else { thumbEl.style.display = 'none'; }
+            
+            const btn = document.getElementById('result-btn');
+            btn.href = downloadUrl;
+            
+            // Adapt button color based on mode
+            if(currentMode === 'audio') {
+                btn.style.background = 'linear-gradient(135deg, #ff007f, #7f00ff)';
+                btn.innerText = '🎵 Download Audio';
+            } else {
+                btn.style.background = 'linear-gradient(135deg, #00b09b, #96c93d)';
+                btn.innerText = '⬇️ Download Video';
+            }
+
+            document.getElementById('result').style.display = 'block';
+        }
+        function hideResult() { document.getElementById('result').style.display = 'none'; }
+
+        async function processMedia(mode) {
+            const inputId = mode === 'video' ? 'video-url' : 'audio-url';
+            const btnId = mode === 'video' ? 'btn-video' : 'btn-audio';
+            const url = document.getElementById(inputId).value.trim();
+            const btn = document.getElementById(btnId);
+
+            if(!url) return showStatus('⚠️ Please paste a link first!', true);
+
+            hideResult();
+            btn.disabled = true;
+            showStatus('<div class="spinner"></div> Initiating core extraction engine...');
+
+            try {
+                const res = await fetch('/api/extract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, mode })
+                });
+                
+                const data = await res.json();
+                btn.disabled = false;
+
+                if(data.success) {
+                    hideStatus();
+                    showResult(data.title, data.thumbnail, data.downloadUrl);
+                } else {
+                    showStatus('❌ ' + (data.message || 'Extraction failed. The link might be private or unsupported.'), true);
+                }
+            } catch (err) {
+                btn.disabled = false;
+                showStatus('❌ Network error. Please try again.', true);
+            }
+        }
+    </script>
+</body>
+</html>
+`;
+
+app.get('/', (req, res) => res.send(frontendHTML));
+
+// ==========================================
+// 2. BACKEND: ROBUST EXTRACTION ENGINE
+// ==========================================
+app.post('/api/extract', async (req, res) => {
+    const { url, mode } = req.body;
+    if (!url) return res.json({ success: false, message: "URL is empty" });
+
+    const isAudio = mode === 'audio';
+
+    // ENGINE A: TIKTOK DEDICATED (TikWM)
+    if (url.includes('tiktok.com')) {
         try {
-            const cobaltRes = await fetch('https://api.cobalt.tools/', {
+            const tkRes = await fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(url));
+            const tkData = await tkRes.json();
+            if (tkData?.data) {
+                return res.json({
+                    success: true,
+                    title: tkData.data.title || "TikTok Media",
+                    thumbnail: tkData.data.cover || "",
+                    downloadUrl: isAudio ? (tkData.data.music || tkData.data.play) : (tkData.data.hdplay || tkData.data.play)
+                });
+            }
+        } catch (e) {
+            console.log("TikWM Failed:", e.message);
+        }
+    }
+
+    // ENGINE B: COBALT API (MULTI-INSTANCE FALLBACK)
+    // List of public Cobalt APIs to avoid rate limits
+    const cobaltInstances = [
+        'https://api.cobalt.tools',
+        'https://co.wuk.sh',
+        'https://cobalt.q-n-d.de',
+        'https://cobalt-api.kwiatektu.com'
+    ];
+
+    for (let instance of cobaltInstances) {
+        try {
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            };
+            
+            // Payload based on Cobalt v10 standard
+            const payload = {
+                url: url,
+                downloadMode: isAudio ? 'audio' : 'auto',
+                videoQuality: '1080'
+            };
+
+            const cbRes = await fetch(instance, {
                 method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-                },
-                body: JSON.stringify({
-                    url: url,
-                    downloadMode: type === 'audio' ? 'audio' : 'auto',
-                    videoQuality: '1080'
-                })
+                headers: headers,
+                body: JSON.stringify(payload)
             });
 
-            const cobaltData = await cobaltRes.json();
-            console.log("[COBALT RESPONSE]:", cobaltData);
+            if (!cbRes.ok) continue; // Skip to next instance if blocked
 
-            if (cobaltData) {
-                let dlUrl = cobaltData.url;
-                if (!dlUrl && cobaltData.picker && cobaltData.picker.length > 0) {
-                    dlUrl = cobaltData.picker[0].url;
-                }
-                
-                if (dlUrl) {
+            const cbData = await cbRes.json();
+            
+            let dlUrl = cbData.url;
+            if (!dlUrl && cbData.picker && cbData.picker.length > 0) {
+                dlUrl = cbData.picker[0].url; // For posts with multiple media (like Insta carousel)
+            }
+
+            if (dlUrl) {
+                return res.json({
+                    success: true,
+                    title: cbData.filename || "Extracted Media File",
+                    thumbnail: "", 
+                    downloadUrl: dlUrl
+                });
+            }
+        } catch (e) {
+            console.log(`Cobalt Instance ${instance} failed`);
+        }
+    }
+
+    // ENGINE C: PIPED YOUTUBE FALLBACK (Only for YT links)
+    const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+    if (ytMatch) {
+        const ytId = ytMatch[1];
+        const pipedNodes = ['https://pipedapi.kavin.rocks', 'https://api.piped.private.coffee'];
+        
+        for (let node of pipedNodes) {
+            try {
+                const pRes = await fetch(`${node}/streams/${ytId}`);
+                if(!pRes.ok) continue;
+                const pData = await pRes.json();
+
+                if (isAudio && pData.audioStreams?.length > 0) {
                     return res.json({
                         success: true,
-                        title: cobaltData.filename || "Extracted Stream",
-                        thumbnail: "",
-                        downloadUrl: dlUrl
+                        title: pData.title || "YouTube Audio",
+                        thumbnail: pData.thumbnailUrl,
+                        downloadUrl: pData.audioStreams[0].url
                     });
                 }
-            }
-        } catch(e) { console.error("Cobalt Error:", e.message); }
-
-        // 3. YouTube Fallback Engine (Piped Nodes)
-        const getYTId = (u) => {
-            let m = u.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
-            return m ? m[1] : null;
-        };
-
-        const ytId = getYTId(url);
-        if (ytId) {
-            const pipedNodes = [
-                'https://pipedapi.kavin.rocks',
-                'https://api.piped.private.coffee',
-                'https://pipedapi.mha.fi',
-                'https://pipedapi.adminforge.de',
-                'https://piped-api.garudalinux.org'
-            ];
-
-            for (let node of pipedNodes) {
-                try {
-                    const pRes = await fetch(`${node}/streams/${ytId}`);
-                    if (!pRes.ok) continue;
-                    const pData = await pRes.json();
-
-                    if (type === 'audio' && pData.audioStreams && pData.audioStreams.length > 0) {
-                        return res.json({
-                            success: true,
-                            title: pData.title || "YouTube Audio",
-                            thumbnail: pData.thumbnailUrl || `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
-                            downloadUrl: pData.audioStreams[0].url
-                        });
-                    }
-
-                    if (pData.videoStreams && pData.videoStreams.length > 0) {
-                        const stream = pData.videoStreams.find(s => s.format === 'MPEG-4' && s.quality) || pData.videoStreams[0];
-                        return res.json({
-                            success: true,
-                            title: pData.title || "YouTube Video",
-                            thumbnail: pData.thumbnailUrl || `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
-                            downloadUrl: stream.url
-                        });
-                    }
-                } catch (e) {
-                    continue;
+                
+                if (!isAudio && pData.videoStreams?.length > 0) {
+                    // Try to find MP4 format, otherwise fallback to first available
+                    const stream = pData.videoStreams.find(s => s.format === 'MPEG-4') || pData.videoStreams[0];
+                    return res.json({
+                        success: true,
+                        title: pData.title || "YouTube Video",
+                        thumbnail: pData.thumbnailUrl,
+                        downloadUrl: stream.url
+                    });
                 }
+            } catch (e) {
+                console.log(`Piped Node ${node} failed`);
             }
         }
-
-        return res.json({ success: false, message: "Is link ki stream extract nahi ho saki. Dusri video ka link try karein." });
-
-    } catch (err) {
-        return res.json({ success: false, message: "Backend error: " + err.message });
     }
+
+    // IF ALL ENGINES FAIL
+    return res.json({ 
+        success: false, 
+        message: "All extraction engines failed. The link might be private, region-locked, or unsupported." 
+    });
 });
 
-app.listen(PORT, () => console.log(`Server online on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 AMSAL STUDIOS Core Engine running on port ${PORT}`));
