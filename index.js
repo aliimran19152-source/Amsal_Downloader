@@ -57,13 +57,13 @@ app.get('/', (req, res) => {
                 <div class="tab" onclick="switchTab('audio-sec', this)">Audio Engine</div>
             </div>
 
-            <!-- VIDEO SECTION -->
+            <!-- VIDEO SECTION (FORM REMOVED TO PREVENT PAGE RELOAD) -->
             <div id="video-sec" class="form-section active">
-                <form id="fetchForm">
+                <div>
                     <label>Target Media URL (Video)</label>
-                    <input type="text" id="urlInput" placeholder="Paste Video Link (YT Shorts/Video, TikTok...)" required>
-                    <button type="submit" class="btn-fetch" id="btnVideoFetch">Fetch Video Details & Qualities</button>
-                </form>
+                    <input type="text" id="urlInput" placeholder="Paste Video Link (YT Shorts/Video, TikTok...)">
+                    <button type="button" class="btn-fetch" id="btnVideoFetch" onclick="fetchVideoDetails()">Fetch Video Details & Qualities</button>
+                </div>
 
                 <div id="previewCard" class="preview-card">
                     <div id="videoTitle" class="preview-title">Video Title</div>
@@ -74,13 +74,13 @@ app.get('/', (req, res) => {
                 </div>
             </div>
 
-            <!-- AUDIO SECTION -->
+            <!-- AUDIO SECTION (FORM REMOVED TO PREVENT PAGE RELOAD) -->
             <div id="audio-sec" class="form-section">
-                <form id="audioFetchForm">
+                <div>
                     <label>Target Media URL (Audio / Sound Extract)</label>
-                    <input type="text" id="audioUrlInput" placeholder="Paste link to extract pure HQ Audio/Music" required>
-                    <button type="submit" class="btn-audio-fetch" id="btnAudioFetch">Fetch Audio Details & Bitrates</button>
-                </form>
+                    <input type="text" id="audioUrlInput" placeholder="Paste link to extract pure HQ Audio/Music">
+                    <button type="button" class="btn-audio-fetch" id="btnAudioFetch" onclick="fetchAudioDetails()">Fetch Audio Details & Bitrates</button>
+                </div>
 
                 <div id="audioPreviewCard" class="preview-card">
                     <div id="audioTitle" class="preview-title">Audio Title</div>
@@ -112,13 +112,19 @@ app.get('/', (req, res) => {
             }
 
             // --- VIDEO ENGINE ACTIONS ---
-            document.getElementById('fetchForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const url = document.getElementById('urlInput').value.trim();
+            async function fetchVideoDetails() {
+                const urlInput = document.getElementById('urlInput');
+                const url = urlInput.value.trim();
                 const statusPanel = document.getElementById('download-status');
                 const previewCard = document.getElementById('previewCard');
                 const btn = document.getElementById('btnVideoFetch');
                 
+                if(!url) {
+                    statusPanel.style.display = 'block';
+                    statusPanel.innerHTML = "⚠️ <b>[Input Error]:</b> Pehle link paste karein!";
+                    return;
+                }
+
                 previewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
                 btn.disabled = true;
@@ -171,7 +177,7 @@ app.get('/', (req, res) => {
 
                     btn.disabled = false;
                     if (!success) {
-                        statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> Unable to extract streams. Please retry.";
+                        statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> Stream processing delayed. Click FETCH again.";
                     }
                     return;
                 }
@@ -202,7 +208,7 @@ app.get('/', (req, res) => {
 
                 btn.disabled = false;
                 statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> Invalid or unsupported link.";
-            });
+            }
 
             document.getElementById('qualityDropdown').addEventListener('change', (e) => {
                 const selectedUrl = videoStreamsMap[e.target.value];
@@ -210,13 +216,19 @@ app.get('/', (req, res) => {
             });
 
             // --- AUDIO ENGINE ACTIONS ---
-            document.getElementById('audioFetchForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const url = document.getElementById('audioUrlInput').value.trim();
+            async function fetchAudioDetails() {
+                const audioUrlInput = document.getElementById('audioUrlInput');
+                const url = audioUrlInput.value.trim();
                 const statusPanel = document.getElementById('download-status');
                 const audioPreviewCard = document.getElementById('audioPreviewCard');
                 const btn = document.getElementById('btnAudioFetch');
                 
+                if(!url) {
+                    statusPanel.style.display = 'block';
+                    statusPanel.innerHTML = "⚠️ <b>[Input Error]:</b> Pehle audio link paste karein!";
+                    return;
+                }
+
                 audioPreviewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
                 btn.disabled = true;
@@ -300,7 +312,7 @@ app.get('/', (req, res) => {
 
                 btn.disabled = false;
                 statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> Invalid or unsupported audio link.";
-            });
+            }
 
             document.getElementById('audioQualityDropdown').addEventListener('change', (e) => {
                 const selectedUrl = audioStreamsMap[e.target.value];
