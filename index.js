@@ -72,7 +72,7 @@ app.get('/', (req, res) => {
                 <div id="previewCard" class="preview-card">
                     <div id="videoTitle" class="preview-title">Video Title</div>
                     <img id="videoThumb" src="" alt="Thumbnail">
-                    <label>Select Quality Option</label>
+                    <label>Select Premium Quality</label>
                     <select id="qualityDropdown" class="quality-select"></select>
                     <button id="startDownloadBtn" class="btn-download">Download In Selected Quality</button>
                 </div>
@@ -118,7 +118,7 @@ app.get('/', (req, res) => {
                 
                 previewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching media meta-data & sizes...";
+                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching unique best resolution tiers...";
                 
                 try {
                     const response = await fetch('/api/fetch-info', {
@@ -162,7 +162,7 @@ app.get('/', (req, res) => {
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "💎 <b>[Raw Stream Engine]:</b> Downloading absolute original bitrate file...";
+                statusPanel.innerHTML = "💎 <b>[Muxing Best Quality]:</b> Pulling maximum uncompressed bitrate stream...";
                 
                 try {
                     const response = await fetch('/api/prepare-video', {
@@ -286,44 +286,56 @@ app.post('/api/fetch-info', (req, res) => {
                 });
             }
 
-            let mappedFormats = [];
+            const rawFormats = meta.formats || [];
             
-            if (meta.formats && meta.formats.length > 0) {
-                // Filter out and clean up all formats with real sizes and exact labels
-                meta.formats.forEach(f => {
-                    let resolution = f.height ? `${f.height}p` : f.resolution || '';
-                    if (!resolution && f.vcodec !== 'none') resolution = 'Video Stream';
-                    
-                    if (f.vcodec !== 'none' || f.acodec !== 'none') {
-                        let sizeStr = '';
-                        if (f.filesize) {
-                            sizeStr = ` (~${(f.filesize / (1024 * 1024)).toFixed(2)} MB)`;
-                        } else if (f.filesize_approx) {
-                            sizeStr = ` (~${(f.filesize_approx / (1024 * 1024)).toFixed(2)} MB)`;
-                        }
-                        
-                        let label = `${resolution} | Ext: ${f.ext.toUpperCase()} | Codec: ${f.vcodec || 'N/A'}${sizeStr}`;
-                        
-                        mappedFormats.push({
-                            id: f.format_id,
-                            label: label,
-                            height: f.height || 0
-                        });
-                    }
-                });
-            }
+            // Defination of standard tiers
+            const targetTiers = [
+                { name: "4K UHD", maxH: 4320, minH: 2161 },
+                { name: "2K QuadHD", maxH: 2160, minH: 1441 },
+                { name: "1080p Full HD", maxH: 1440, minH: 1081 },
+                { name: "720p HD", maxH: 1080, minH: 721 },
+                { name: "480p HQ", maxH: 720, minH: 481 },
+                { name: "360p Standard", maxH: 480, minH: 0 }
+            ];
 
-            // Unko clear resolution sequence wise sort karo
-            mappedFormats.sort((a, b) => b.height - a.height);
+            let mappedFormats = [];
 
-            // Add Universal Best Top Option (Strict Uncompressed)
-            mappedFormats.unshift({
+            // Add Absolute Best option directly at top
+            mappedFormats.push({
                 id: "bestvideo+bestaudio/best",
-                label: "🌟 Absolute Uncompressed Best Quality (12.5MB+ Exact Original Raw Dynamic Size)"
+                label: "🌟 Absolute Uncompressed Best Quality (Original Raw Size)"
             });
 
-            if (mappedFormats.length === 1) {
-                mappedFormats.push({ id: "best", label: "Standard Progressive Stream" });
+            // Find unique best stream for each target resolution tier
+            targetTiers.forEach(tier => {
+                let validStreams = rawFormats.filter(f => f.height > tier.minH && f.height <= tier.maxH && f.vcodec !== 'none');
+                
+                if (validStreams.length > 0) {
+                    // Sort by bitrate (tbr) to strictly catch the heaviest/best option
+                    validStreams.sort((a, b) => (b.tbr || 0) - (a.tbr || 0));
+                    let bestStream = validStreams[0];
+                    
+                    let sizeStr = 'Unknown Size';
+                    if (bestStream.filesize) {
+                        sizeStr = `${(bestStream.filesize / (1024 * 1024)).toFixed(2)} MB`;
+                    } else if (bestStream.filesize_approx) {
+                        sizeStr = `${(bestStream.filesize_approx / (1024 * 1024)).toFixed(2)} MB`;
+                    } else if (meta.duration) {
+                        // Safe backup fallback size estimation based on high-bitrate matching
+                        let estimatedBitrate = bestStream.tbr ? bestStream.tbr : (tier.maxH === 1440 ? 4500 : 2500);
+                        sizeStr = `~${((estimatedBitrate * meta.duration) / 8 / 1024).toFixed(1)} MB`;
+                    }
+
+                    mappedFormats.push({
+                        id: `bestvideo[height<=${tier.maxH}]+bestaudio/best`,
+                        label: `🎬 ${tier.name} [${bestStream.height}p] | Exact Size: ${sizeStr}`
+                    });
+                }
+            });
+
+            // Fallback unique progressive check if no separate components mapped
+            if (mappedFormats.length === 1 && rawFormats.length > 0) {
+                mappedFormats.push({ id: "best", label: "Standard Progressive Stream (Auto Best)" });
             }
 
             res.json({ 
@@ -347,26 +359,20 @@ app.post('/api/prepare-video', (req, res) => {
     const outputFilename = `video_${Date.now()}.%(ext)s`;
     const outputPath = path.join(TMP_DIR, outputFilename);
     
-    // Strict direct selection without conversion limits to prevent dropping bitrate to 4MB
     let formatSelector = formatId || "bestvideo+bestaudio/best";
-    
-    // Agar custom format choose kia ho jo separate video ho, to automatically sound merge force krein
-    if (formatSelector !== "bestvideo+bestaudio/best" && !formatSelector.includes('+')) {
-        formatSelector = `${formatSelector}+bestaudio/best`;
-    }
 
     const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatSelector}" "${url}" -o "${outputPath}"`;
 
-    exec(command, { maxBuffer: 1024 * 1024 * 200 }, (err, stdout, stderr) => {
+    exec(command, { maxBuffer: 1024 * 1024 * 250 }, (err, stdout, stderr) => {
         const files = fs.readdirSync(TMP_DIR);
         const downloadedFile = files.find(f => f.startsWith(`video_${outputFilename.split('_')[1].split('.')[0]}`));
 
         if (err || !downloadedFile) {
-            console.error("Muxing error, trying standard extraction fallback...");
+            console.error("Muxing error, forcing standard stream pull...");
             const fallbackPath = path.join(TMP_DIR, `video_fallback_${Date.now()}.mp4`);
             const fallbackCommand = `yt-dlp --no-check-certificates -f "best" "${url}" -o "${fallbackPath}"`;
             
-            exec(fallbackCommand, { maxBuffer: 1024 * 1024 * 200 }, (fErr) => {
+            exec(fallbackCommand, { maxBuffer: 1024 * 1024 * 250 }, (fErr) => {
                 if(fErr || !fs.existsSync(fallbackPath)) {
                     return res.json({ success: false, message: "Download pipeline extraction failed." });
                 }
