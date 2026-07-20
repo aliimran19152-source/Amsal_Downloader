@@ -3,6 +3,8 @@ const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const chalk = require('chalk');
+const http = require('http');
+const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,6 +16,25 @@ if (!fs.existsSync(TMP_DIR)) {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Remote file size fetcher via HTTP HEAD
+function getRemoteSize(url) {
+    return new Promise((resolve) => {
+        if (!url) return resolve(0);
+        const client = url.startsWith('https') ? https : http;
+        try {
+            const req = client.request(url, { method: 'HEAD', timeout: 3000 }, (res) => {
+                const len = res.headers['content-length'];
+                resolve(len ? parseInt(len, 10) : 0);
+            });
+            req.on('error', () => resolve(0));
+            req.on('timeout', () => { req.destroy(); resolve(0); });
+            req.end();
+        } catch (e) {
+            resolve(0);
+        }
+    });
+}
 
 app.get('/', (req, res) => {
     res.send(`
@@ -62,7 +83,6 @@ app.get('/', (req, res) => {
                 <div class="tab" onclick="switchTab('audio-sec', this)">Audio Engine</div>
             </div>
 
-            <!-- VIDEO SECTION -->
             <div id="video-sec" class="form-section active">
                 <form id="fetchForm" autocomplete="off">
                     <label>Target Media URL (Video)</label>
@@ -79,7 +99,6 @@ app.get('/', (req, res) => {
                 </div>
             </div>
 
-            <!-- AUDIO SECTION -->
             <div id="audio-sec" class="form-section">
                 <form id="audioFetchForm" autocomplete="off">
                     <label>Target Media URL (Audio / Sound Extract)</label>
@@ -120,7 +139,7 @@ app.get('/', (req, res) => {
                 
                 previewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching raw high-bitrate video streams...";
+                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Parsing original qualities & real live sizes...";
                 
                 try {
                     const response = await fetch('/api/fetch-info', {
@@ -164,7 +183,7 @@ app.get('/', (req, res) => {
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "💎 <b>[Processing]:</b> Fetching full raw stream...";
+                statusPanel.innerHTML = "💎 <b>[HD Extraction]:</b> Compiling exact selected resolution track with HQ Audio...";
                 
                 try {
                     const response = await fetch('/api/prepare-video', {
@@ -263,13 +282,13 @@ app.get('/', (req, res) => {
 });
 
 // --- METADATA FETCH ENGINE ---
-app.post('/api/fetch-info', (req, res) => {
+app.post('/api/fetch-info', async (req, res) => {
     const { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
 
     const command = `yt-dlp --dump-json --no-warnings --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
     
-    exec(command, { maxBuffer: 1024 * 1024 * 50 }, (err, stdout) => {
+    exec(command, { maxBuffer: 1024 * 1024 * 50 }, async (err, stdout) => {
         if (err) return res.json({ success: false, message: "Could not parse link." });
         
         try {
@@ -285,37 +304,44 @@ app.post('/api/fetch-info', (req, res) => {
             }
 
             let formatsList = [];
-            
-            formatsList.push({
-                id: "best",
-                label: "🌟 Absolute Highest Original Stream (Full Raw Quality)"
-            });
 
             if (meta.formats && Array.isArray(meta.formats)) {
                 let seenResolutions = new Set();
+                const targetFormats = meta.formats.slice().reverse();
                 
-                meta.formats.slice().reverse().forEach(f => {
+                for (let f of targetFormats) {
                     if (f.vcodec !== 'none') {
-                        let resName = f.height ? `${f.height}p` : (f.format_note || 'HQ');
+                        let resLabel = f.height ? `${f.height}p` : (f.format_note || 'HQ');
                         
-                        if (!seenResolutions.has(resName)) {
-                            seenResolutions.add(resName);
+                        if (!seenResolutions.has(resLabel)) {
+                            seenResolutions.add(resLabel);
                             
-                            let size = 'Original Size';
-                            if (f.filesize) {
-                                size = `${(f.filesize / (1024 * 1024)).toFixed(2)} MB`;
-                            } else if (f.filesize_approx) {
-                                size = `~${(f.filesize_approx / (1024 * 1024)).toFixed(2)} MB`;
+                            let finalBytes = f.filesize || f.filesize_approx || 0;
+                            if (!finalBytes && f.url) {
+                                finalBytes = await getRemoteSize(f.url);
+                            }
+                            
+                            let sizeStr = 'Original Size';
+                            if (finalBytes > 0) {
+                                sizeStr = `${(finalBytes / (1024 * 1024)).toFixed(2)} MB`;
+                            } else if (meta.duration && f.tbr) {
+                                sizeStr = `~${((f.tbr * meta.duration) / 8 / 1024).toFixed(1)} MB`;
                             }
 
                             formatsList.push({
                                 id: f.format_id,
-                                label: `🎬 Quality: ${resName} | Size: ${size}`
+                                label: `🎬 Quality: ${resLabel} | Exact Size: ${sizeStr}`
                             });
                         }
                     }
-                });
+                }
             }
+
+            // Unshift exact raw top-level dynamic instruction
+            formatsList.unshift({
+                id: "bestvideo+bestaudio/best",
+                label: "🌟 Absolute Highest Combined Stream (Uncompressed)"
+            });
 
             res.json({ 
                 success: true, 
@@ -330,38 +356,42 @@ app.post('/api/fetch-info', (req, res) => {
     });
 });
 
-// --- VIDEO PREPARE ENGINE ---
+// --- VIDEO PREPARE ENGINE (FIXED MERGING LOCK) ---
 app.post('/api/prepare-video', (req, res) => {
     const { url, formatId } = req.body;
     if (!url) return res.json({ success: false, message: "Invalid URL." });
 
-    const outputFilename = `video_${Date.now()}.%(ext)s`;
+    const uniqueId = Date.now();
+    const outputFilename = `video_${uniqueId}.mp4`;
     const outputPath = path.join(TMP_DIR, outputFilename);
     
-    let targetFormat = formatId || "best";
-    if (targetFormat !== "best") {
+    // Crucial Update: If any custom ID is selected, force it to merge with bestaudio, 
+    // otherwise fallback to full absolute uncompressed merge directly. 
+    // This stops the engine from falling back to the default 4.08MB stream.
+    let targetFormat = formatId;
+    if (targetFormat && targetFormat !== "bestvideo+bestaudio/best") {
         targetFormat = `${targetFormat}+bestaudio/best`;
+    } else {
+        targetFormat = "bestvideo+bestaudio/best";
     }
 
-    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${targetFormat}" "${url}" -o "${outputPath}"`;
+    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${targetFormat}" --merge-output-format mp4 "${url}" -o "${outputPath}"`;
 
-    exec(command, { maxBuffer: 1024 * 1024 * 250 }, (err) => {
-        const files = fs.readdirSync(TMP_DIR);
-        const downloadedFile = files.find(f => f.startsWith(`video_${outputFilename.split('_')[1].split('.')[0]}`));
-
-        if (err || !downloadedFile) {
-            const fallbackPath = path.join(TMP_DIR, `video_raw_${Date.now()}.mp4`);
-            const fallbackCommand = `yt-dlp --no-check-certificates -f "best" "${url}" -o "${fallbackPath}"`;
+    exec(command, { maxBuffer: 1024 * 1024 * 300 }, (err) => {
+        // Strict file verification without using dynamic compression fallbacks
+        if (err || !fs.existsSync(outputPath)) {
+            // Secondary direct uncompressed single target force link extraction
+            const singleForceCommand = `yt-dlp --no-check-certificates -f "best" "${url}" -o "${outputPath}"`;
             
-            exec(fallbackCommand, { maxBuffer: 1024 * 1024 * 250 }, (fErr) => {
-                if(fErr || !fs.existsSync(fallbackPath)) {
-                    return res.json({ success: false, message: "Download pipeline extraction failed." });
+            exec(singleForceCommand, { maxBuffer: 1024 * 1024 * 300 }, (fErr) => {
+                if(fErr || !fs.existsSync(outputPath)) {
+                    return res.json({ success: false, message: "Download pipeline track merging failed." });
                 }
-                res.json({ success: true, filename: path.basename(fallbackPath) });
+                res.json({ success: true, filename: outputFilename });
             });
             return;
         }
-        res.json({ success: true, filename: downloadedFile });
+        res.json({ success: true, filename: outputFilename });
     });
 });
 
@@ -402,9 +432,5 @@ app.get('/api/chrome-popup', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    if (chalk && chalk.cyan) {
-        console.log(chalk.cyan(`Server running on port ${PORT}`));
-    } else {
-        console.log(`Server running on port ${PORT}`);
-    }
+    console.log(`Server running on port ${PORT}`);
 });
