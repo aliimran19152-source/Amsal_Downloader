@@ -30,124 +30,148 @@ function formatBytes(bytes) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-// Universal bypass arguments for YouTube, TikTok, Insta, Pinterest, X
-const BROWSER_ARGS = '--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" --extractor-args "youtube:player_client=android,web" --no-check-certificate --no-warnings';
+// URL Cleaner to fix youtu.be & tracking parameters (?si=...)
+function cleanUrl(rawUrl) {
+    if (!rawUrl) return '';
+    let clean = rawUrl.trim();
+    if (clean.includes('youtu.be/')) {
+        const id = clean.split('youtu.be/')[1].split('?')[0].split('&')[0];
+        return `https://www.youtube.com/watch?v=${id}`;
+    }
+    if (clean.includes('youtube.com/shorts/')) {
+        const id = clean.split('youtube.com/shorts/')[1].split('?')[0].split('&')[0];
+        return `https://www.youtube.com/watch?v=${id}`;
+    }
+    return clean.split('?si=')[0];
+}
 
-// --- ROUTE 1: FETCH METADATA (UNIVERSAL & HIGH BITRATE DETECTION) ---
+// Anti-bot flags for Cloud Servers (Render)
+const YT_FLAGS = '--extractor-args "youtube:player_client=ios,mweb,android" --no-check-certificate --no-warnings --user-agent "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15"';
+
+// --- ROUTE 1: FETCH METADATA ---
 app.post('/api/fetch-info', (req, res) => {
-    const { url, type, engine } = req.body;
+    let { url, type, engine } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
 
+    const targetUrl = cleanUrl(url);
     const isAudio = (type === 'audio' || engine === 'audio');
-    const command = `${YTDLP} ${BROWSER_ARGS} --dump-json "${url}"`;
+    const command = `${YTDLP} ${YT_FLAGS} --dump-json "${targetUrl}"`;
     
     exec(command, { maxBuffer: 1024 * 1024 * 35 }, (err, stdout) => {
         if (err || !stdout) {
-            return res.json({ success: false, message: "Link parse nahi ho saka. Link public aur valid hona chahiye." });
-        }
-        
-        try {
-            const meta = JSON.parse(stdout);
-            const rawFormats = meta.formats || [];
-            const duration = meta.duration || 180;
-
-            // --- AUDIO ENGINE METADATA ---
-            if (isAudio) {
-                const audioTiers = [
-                    { id: "320K", label: "Studio Master (320kbps MP3)", bitrate: 320, defaultMb: 7.2 },
-                    { id: "256K", label: "High Quality (256kbps MP3)", bitrate: 256, defaultMb: 5.8 },
-                    { id: "128K", label: "Standard Quality (128kbps MP3)", bitrate: 128, defaultMb: 2.9 }
-                ];
-
-                let availableAudio = audioTiers.map(tier => {
-                    let calcSize = duration > 0 ? formatBytes((tier.bitrate * 1000 * duration) / 8) : null;
-                    let sizeStr = calcSize || `${tier.defaultMb} MB`;
-                    return { id: tier.id, label: `${tier.label} [~${sizeStr}]` };
-                });
-
-                return res.json({
-                    success: true,
-                    title: meta.title || "Audio Track",
-                    thumbnail: meta.thumbnail || (meta.thumbnails && meta.thumbnails.length ? meta.thumbnails[meta.thumbnails.length - 1].url : ""),
-                    formats: availableAudio
-                });
-            }
-
-            // --- VIDEO ENGINE METADATA ---
-            const qualityTiers = [
-                { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", refBitrate: 25000, defaultMb: 85.0 },
-                { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", refBitrate: 12000, defaultMb: 45.0 },
-                { maxH: 1440, minH: 1081, label: "1080p Full HD", refBitrate: 6000, defaultMb: 22.0 },
-                { maxH: 1080, minH: 721,  label: "720p HD", refBitrate: 3000, defaultMb: 11.5 },
-                { maxH: 720,  minH: 481,  label: "480p HQ", refBitrate: 1500, defaultMb: 5.8 },
-                { maxH: 480,  minH: 0,    label: "360p Standard", refBitrate: 800, defaultMb: 3.2 }
-            ];
-            
-            let availableOptions = [];
-            let maxFoundHeight = 0;
-            rawFormats.forEach(f => { if (f.height > maxFoundHeight) maxFoundHeight = f.height; });
-
-            if (maxFoundHeight === 0) {
-                maxFoundHeight = meta.height || 720;
-            }
-
-            qualityTiers.forEach(tier => {
-                const hasStream = (tier.maxH <= (maxFoundHeight + 100));
-                
-                if (hasStream) {
-                    const validStreams = rawFormats.filter(f => f.height > tier.minH && f.height <= tier.maxH);
-                    validStreams.sort((a, b) => (b.tbr || b.filesize || 0) - (a.tbr || a.filesize || 0));
-                    const bestStream = validStreams[0];
-
-                    let realBytes = bestStream ? (bestStream.filesize || bestStream.filesize_approx || 0) : (meta.filesize || meta.filesize_approx || 0);
-                    let sizeStr = formatBytes(realBytes);
-
-                    if (!sizeStr && duration > 0) {
-                        sizeStr = formatBytes((tier.refBitrate * 1000 * duration) / 8);
-                    }
-
-                    if (!sizeStr) {
-                        sizeStr = `${tier.defaultMb} MB`;
-                    }
-
-                    // Format selector for maximum possible bitrate
-                    const formatSelector = bestStream 
-                        ? `bestvideo[format_id=${bestStream.format_id}]+bestaudio/bestvideo[height<=${tier.maxH}]+bestaudio/best`
-                        : `bestvideo[height<=${tier.maxH}]+bestaudio/best`;
-
-                    availableOptions.push({ id: formatSelector, label: `${tier.label} [~${sizeStr}]`, disabled: false });
-                } else {
-                    availableOptions.push({ id: "disabled", label: `${tier.label} - [Unavailable]`, disabled: true });
+            // Direct Stream Retry for Strict Links
+            const retryCmd = `${YTDLP} --no-check-certificate --dump-json "${targetUrl}"`;
+            exec(retryCmd, { maxBuffer: 1024 * 1024 * 35 }, (rErr, rStdout) => {
+                if (rErr || !rStdout) {
+                    return res.json({ success: false, message: "Link parse nahi ho saka. Link public aur valid hona chahiye." });
                 }
+                processMetadata(rStdout, isAudio, res);
             });
-
-            res.json({ 
-                success: true, 
-                title: meta.title || "External Media Stream", 
-                thumbnail: meta.thumbnail || (meta.thumbnails && meta.thumbnails.length ? meta.thumbnails[meta.thumbnails.length - 1].url : ""), 
-                formats: availableOptions 
-            });
-
-        } catch (e) {
-            res.json({ success: false, message: "Metadata error." });
+            return;
         }
+        processMetadata(stdout, isAudio, res);
     });
 });
 
-// --- ROUTE 2: PREPARE VIDEO (HIGH QUALITY / MAX BITRATE) ---
+function processMetadata(stdout, isAudio, res) {
+    try {
+        const meta = JSON.parse(stdout);
+        const rawFormats = meta.formats || [];
+        const duration = meta.duration || 180;
+
+        if (isAudio) {
+            const audioTiers = [
+                { id: "320K", label: "Studio Master (320kbps MP3)", bitrate: 320, defaultMb: 7.2 },
+                { id: "256K", label: "High Quality (256kbps MP3)", bitrate: 256, defaultMb: 5.8 },
+                { id: "128K", label: "Standard Quality (128kbps MP3)", bitrate: 128, defaultMb: 2.9 }
+            ];
+
+            let availableAudio = audioTiers.map(tier => {
+                let calcSize = duration > 0 ? formatBytes((tier.bitrate * 1000 * duration) / 8) : null;
+                let sizeStr = calcSize || `${tier.defaultMb} MB`;
+                return { id: tier.id, label: `${tier.label} [~${sizeStr}]` };
+            });
+
+            return res.json({
+                success: true,
+                title: meta.title || "Audio Track",
+                thumbnail: meta.thumbnail || (meta.thumbnails && meta.thumbnails.length ? meta.thumbnails[meta.thumbnails.length - 1].url : ""),
+                formats: availableAudio
+            });
+        }
+
+        const qualityTiers = [
+            { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", refBitrate: 25000, defaultMb: 85.0 },
+            { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", refBitrate: 12000, defaultMb: 45.0 },
+            { maxH: 1440, minH: 1081, label: "1080p Full HD", refBitrate: 6000, defaultMb: 22.0 },
+            { maxH: 1080, minH: 721,  label: "720p HD", refBitrate: 3000, defaultMb: 11.5 },
+            { maxH: 720,  minH: 481,  label: "480p HQ", refBitrate: 1500, defaultMb: 5.8 },
+            { maxH: 480,  minH: 0,    label: "360p Standard", refBitrate: 800, defaultMb: 3.2 }
+        ];
+        
+        let availableOptions = [];
+        let maxFoundHeight = 0;
+        rawFormats.forEach(f => { if (f.height > maxFoundHeight) maxFoundHeight = f.height; });
+
+        if (maxFoundHeight === 0) {
+            maxFoundHeight = meta.height || 720;
+        }
+
+        qualityTiers.forEach(tier => {
+            const hasStream = (tier.maxH <= (maxFoundHeight + 100));
+            
+            if (hasStream) {
+                const validStreams = rawFormats.filter(f => f.height > tier.minH && f.height <= tier.maxH);
+                validStreams.sort((a, b) => (b.tbr || b.filesize || 0) - (a.tbr || a.filesize || 0));
+                const bestStream = validStreams[0];
+
+                let realBytes = bestStream ? (bestStream.filesize || bestStream.filesize_approx || 0) : (meta.filesize || meta.filesize_approx || 0);
+                let sizeStr = formatBytes(realBytes);
+
+                if (!sizeStr && duration > 0) {
+                    sizeStr = formatBytes((tier.refBitrate * 1000 * duration) / 8);
+                }
+
+                if (!sizeStr) {
+                    sizeStr = `${tier.defaultMb} MB`;
+                }
+
+                const formatSelector = bestStream 
+                    ? `bestvideo[format_id=${bestStream.format_id}]+bestaudio/bestvideo[height<=${tier.maxH}]+bestaudio/best`
+                    : `bestvideo[height<=${tier.maxH}]+bestaudio/best`;
+
+                availableOptions.push({ id: formatSelector, label: `${tier.label} [~${sizeStr}]`, disabled: false });
+            } else {
+                availableOptions.push({ id: "disabled", label: `${tier.label} - [Unavailable]`, disabled: true });
+            }
+        });
+
+        res.json({ 
+            success: true, 
+            title: meta.title || "External Media Stream", 
+            thumbnail: meta.thumbnail || (meta.thumbnails && meta.thumbnails.length ? meta.thumbnails[meta.thumbnails.length - 1].url : ""), 
+            formats: availableOptions 
+        });
+
+    } catch (e) {
+        res.json({ success: false, message: "Metadata error." });
+    }
+}
+
+// --- ROUTE 2: PREPARE VIDEO ---
 app.post('/api/prepare-video', (req, res) => {
-    const { url, formatId } = req.body;
+    let { url, formatId } = req.body;
     if (!url) return res.json({ success: false, message: "Invalid parameters." });
 
+    const targetUrl = cleanUrl(url);
     const outputPath = path.join(TMP_DIR, `video_${Date.now()}.mp4`);
     const selectedFormat = (formatId && formatId !== "disabled") ? formatId : "bestvideo+bestaudio/best";
     
-    const cmd = `${YTDLP} ${BROWSER_ARGS} -f "${selectedFormat}" -o "${outputPath}" "${url}"`;
+    const cmd = `${YTDLP} ${YT_FLAGS} -f "${selectedFormat}" -o "${outputPath}" "${targetUrl}"`;
 
     exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (err) => {
         if (err || !fs.existsSync(outputPath)) {
-            // Fallback to highest single stream format
-            const fallbackCmd = `${YTDLP} ${BROWSER_ARGS} -f "best" -o "${outputPath}" "${url}"`;
+            const fallbackCmd = `${YTDLP} ${YT_FLAGS} -f "best" -o "${outputPath}" "${targetUrl}"`;
             exec(fallbackCmd, (fErr) => {
                 if (fErr || !fs.existsSync(outputPath)) {
                     return res.json({ success: false, message: "Download failed." });
@@ -160,13 +184,14 @@ app.post('/api/prepare-video', (req, res) => {
     });
 });
 
-// --- ROUTE 3: PREPARE AUDIO (HIGH BITRATE STREAM) ---
+// --- ROUTE 3: PREPARE AUDIO ---
 app.post('/api/prepare-audio', (req, res) => {
-    const { url } = req.body;
+    let { url } = req.body;
     if (!url) return res.json({ success: false, message: "Invalid URL." });
 
+    const targetUrl = cleanUrl(url);
     const outputPath = path.join(TMP_DIR, `audio_${Date.now()}.m4a`);
-    const cmd = `${YTDLP} ${BROWSER_ARGS} -f "bestaudio/ba/best" -o "${outputPath}" "${url}"`;
+    const cmd = `${YTDLP} ${YT_FLAGS} -f "bestaudio/ba/best" -o "${outputPath}" "${targetUrl}"`;
 
     exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (err) => {
         if (err || !fs.existsSync(outputPath)) {
@@ -206,14 +231,14 @@ app.get('/api/search-movie', async (req, res) => {
             }
         }
 
-        return res.json({ success: false, error: "Yeh movie ya series database mein nahi mili. Spelling check karein!" });
+        return res.json({ success: false, error: "Yeh movie ya series database mein nahi mili." });
 
     } catch (e) {
-        return res.json({ success: false, error: "Search database service issue. Dobara try karein." });
+        return res.json({ success: false, error: "Search database service issue." });
     }
 });
 
-// --- ROUTE 5: FILE DOWNLOAD POPUP ---
+// --- ROUTE 5: CHROME DOWNLOAD POPUP ---
 app.get('/api/chrome-popup', (req, res) => {
     const fileName = req.query.file;
     const filePath = path.join(TMP_DIR, fileName);
