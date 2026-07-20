@@ -20,17 +20,21 @@
         button:hover { transform: scale(1.02); opacity: 0.9; }
         
         .status { background: #21262d; border-left: 4px solid #00f2fe; padding: 15px; text-align: left; border-radius: 4px; font-size: 14px; display: none; margin-top: 15px; line-height: 1.5; }
-        
         .preview-card { background: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 15px; margin-top: 20px; display: none; text-align: left; }
         .preview-card img { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid #444; display: block; max-height: 300px; object-fit: cover; }
         .preview-title { font-weight: bold; font-size: 16px; color: #fff; margin-bottom: 15px; line-height: 1.4; background: #21262d; padding: 10px; border-radius: 6px; border-left: 3px solid #ffbc00; }
-        
         .quality-select { width: 100%; padding: 12px; background: #161b22; color: #fff; border: 1px solid #00f2fe; border-radius: 8px; font-size: 15px; margin-bottom: 10px; outline: none; }
+        
         .tabs { display: flex; justify-content: space-around; margin-bottom: 20px; border-bottom: 1px solid #30363d; }
-        .tab { padding: 10px 20px; cursor: pointer; color: #8b949e; font-weight: bold; }
+        .tab { padding: 10px 15px; cursor: pointer; color: #8b949e; font-weight: bold; font-size: 14px; }
         .tab.active { color: #00f2fe; border-bottom: 2px solid #00f2fe; }
         .form-section { display: none; }
         .form-section.active { display: block; }
+        
+        .movie-card { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px; margin-top: 12px; text-align: center; }
+        .movie-card img { max-height: 200px; margin: 0 auto 10px auto; border-radius: 6px; }
+        .action-btn-group { display: flex; gap: 10px; margin-top: 10px; }
+        .action-btn { flex: 1; padding: 10px; font-size: 12px; border-radius: 6px; text-decoration: none; font-weight: bold; display: block; }
     </style>
 </head>
 <body>
@@ -41,67 +45,57 @@
         <div class="tabs">
             <div class="tab active" onclick="switchTab('video-sec', this)">Video Engine</div>
             <div class="tab" onclick="switchTab('audio-sec', this)">Audio Engine</div>
-            <div class="tab" onclick="switchTab('movie-sec', this)">Movie Downloader</div>
+            <div class="tab" onclick="switchTab('movie-sec', this)">Movie Search</div>
         </div>
 
         <!-- VIDEO SECTION -->
         <div id="video-sec" class="form-section active">
             <form id="fetchForm">
                 <label>Target Media URL (Video)</label>
-                <input type="text" id="urlInput" placeholder="Paste Video Link (YT, Insta, TikTok, Pinterest...)" required>
-                <button type="submit" class="btn-fetch">Fetch Video Details & Qualities</button>
+                <input type="text" id="urlInput" placeholder="Paste Link (YT, Insta, TikTok...)" required>
+                <button type="submit" class="btn-fetch">Fetch Video Qualities</button>
             </form>
 
             <div id="previewCard" class="preview-card">
                 <div id="videoTitle" class="preview-title">Video Title</div>
                 <img id="videoThumb" src="" alt="Thumbnail">
-                <label>Select Premium Quality</label>
+                <label>Select Quality</label>
                 <select id="qualityDropdown" class="quality-select"></select>
-                <button id="startDownloadBtn" class="btn-download">Download Selected Quality</button>
+                <button id="startDownloadBtn" class="btn-download">Download Video</button>
             </div>
         </div>
 
         <!-- AUDIO SECTION -->
         <div id="audio-sec" class="form-section">
             <form id="audioFetchForm">
-                <label>Target Media URL (Audio / Sound Extract)</label>
-                <input type="text" id="audioUrlInput" placeholder="Paste link to extract pure HQ Audio/Music" required>
-                <button type="submit" class="btn-audio-fetch">Fetch Audio Details & Bitrates</button>
+                <label>Target Media URL (Audio Extract)</label>
+                <input type="text" id="audioUrlInput" placeholder="Paste link to extract pure MP3" required>
+                <button type="submit" class="btn-audio-fetch">Fetch Audio Bitrates</button>
             </form>
 
             <div id="audioPreviewCard" class="preview-card">
                 <div id="audioTitle" class="preview-title">Audio Title</div>
                 <img id="audioThumb" src="" alt="Thumbnail">
-                <label>Select Master Bitrate</label>
+                <label>Select Bitrate</label>
                 <select id="audioQualityDropdown" class="quality-select"></select>
-                <button id="startAudioDownloadBtn" class="btn-download" style="background: linear-gradient(45deg, #ff007f, #7f00ff); color: #fff;">Extract Selected Audio</button>
+                <button id="startAudioDownloadBtn" class="btn-download" style="background: linear-gradient(45deg, #ff007f, #7f00ff); color: #fff;">Extract MP3</button>
             </div>
         </div>
 
         <!-- MOVIE DOWNLOADER SECTION -->
         <div id="movie-sec" class="form-section">
-            <label>🌍 Movie Search & Downloader</label>
-            <input type="text" id="globalMovieName" placeholder="Enter Movie Name (e.g., Superman)..." />
-            <button onclick="findMovie()" class="btn-fetch" style="background: #00ffcc; color: #000;">Search Movie</button>
+            <label>🌍 Real Movie & Series Finder</label>
+            <input type="text" id="globalMovieName" placeholder="Enter Movie/Series Name (e.g. Batman, Dhurandar)..." />
+            <button onclick="findMovie()" class="btn-fetch" style="background: #00ffcc; color: #000;">Search Database</button>
 
             <div id="movieLoader" style="display: none; color: #00ffcc; margin: 15px 0;">Searching... Please wait...</div>
-
-            <div id="globalMovieResult" class="preview-card">
-                <div id="foundMovieTitle" class="preview-title"></div>
-                <video id="globalPlayer" controls width="100%" style="border-radius: 5px; background: #000; max-height: 300px; margin-bottom:15px;">
-                    <source id="globalSource" src="" type="video/mp4">
-                </video>
-                <a id="globalDownloadBtn" href="" download class="btn-download" style="display:block; text-decoration:none; text-align:center;">📥 Download This Movie</a>
-            </div>
+            <div id="searchResultsList"></div>
         </div>
 
         <div id="download-status" class="status"></div>
     </div>
 
     <script>
-        let currentVideoUrl = "";
-        let currentAudioUrl = "";
-
         function switchTab(sectionId, tabEl) {
             document.querySelectorAll('.form-section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -114,13 +108,11 @@
         document.getElementById('fetchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const url = document.getElementById('urlInput').value;
-            currentVideoUrl = url;
             const statusPanel = document.getElementById('download-status');
             const previewCard = document.getElementById('previewCard');
-            
             previewCard.style.display = 'none';
             statusPanel.style.display = 'block';
-            statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching media meta-data...";
+            statusPanel.innerHTML = "🛰️ Analyzing Link...";
             
             try {
                 const response = await fetch('/api/fetch-info', {
@@ -129,67 +121,52 @@
                     body: JSON.stringify({ url, type: 'video' })
                 });
                 const data = await response.json();
-                
                 if(data.success) {
                     statusPanel.style.display = 'none';
-                    document.getElementById('videoTitle').innerHTML = "🎬 <b>Title:</b> " + data.title;
-                    if(data.thumbnail) {
-                        document.getElementById('videoThumb').src = data.thumbnail;
-                        document.getElementById('videoThumb').style.display = 'block';
-                    }
+                    document.getElementById('videoTitle').innerHTML = "🎬 " + data.title;
+                    if(data.thumbnail) document.getElementById('videoThumb').src = data.thumbnail;
                     const dropdown = document.getElementById('qualityDropdown');
                     dropdown.innerHTML = "";
                     data.formats.forEach(f => {
-                        const option = document.createElement('option');
-                        option.value = f.id;
-                        option.innerText = f.label;
-                        if(f.disabled) option.disabled = true;
-                        dropdown.appendChild(option);
+                        const opt = document.createElement('option');
+                        opt.value = f.id; opt.innerText = f.label; if(f.disabled) opt.disabled = true;
+                        dropdown.appendChild(opt);
                     });
                     previewCard.style.display = 'block';
-                } else {
-                    statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> " + data.message;
-                }
-            } catch(err) {
-                statusPanel.innerHTML = "❌ <b>[Pipeline Timeout]:</b> Connection failed.";
-            }
+                } else { statusPanel.innerHTML = "❌ " + data.message; }
+            } catch(err) { statusPanel.innerHTML = "❌ Connection failed."; }
         });
 
         document.getElementById('startDownloadBtn').addEventListener('click', async () => {
+            const url = document.getElementById('urlInput').value;
             const formatId = document.getElementById('qualityDropdown').value;
             const statusPanel = document.getElementById('download-status');
             statusPanel.style.display = 'block';
-            statusPanel.innerHTML = "💎 <b>[Processing Core]:</b> Syncing selected stream...";
+            statusPanel.innerHTML = "💎 Processing Download...";
             
             try {
                 const response = await fetch('/api/prepare-video', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: currentVideoUrl, formatId })
+                    body: JSON.stringify({ url, formatId })
                 });
                 const data = await response.json();
                 if(data.success) {
-                    statusPanel.innerHTML = "🔥 <b>[Master Synced]:</b> Initializing download...";
+                    statusPanel.innerHTML = "🔥 Initializing Download File...";
                     window.location.href = "/api/chrome-popup?file=" + encodeURIComponent(data.filename);
-                } else {
-                    statusPanel.innerHTML = "❌ <b>[Extraction Error]:</b> " + data.message;
-                }
-            } catch(err) {
-                statusPanel.innerHTML = "❌ <b>[Pipeline Timeout]:</b> Server error.";
-            }
+                } else { statusPanel.innerHTML = "❌ " + data.message; }
+            } catch(err) { statusPanel.innerHTML = "❌ Server error."; }
         });
 
         // --- AUDIO ENGINE ---
         document.getElementById('audioFetchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const url = document.getElementById('audioUrlInput').value;
-            currentAudioUrl = url;
             const statusPanel = document.getElementById('download-status');
             const audioPreviewCard = document.getElementById('audioPreviewCard');
-            
             audioPreviewCard.style.display = 'none';
             statusPanel.style.display = 'block';
-            statusPanel.innerHTML = "🎵 <b>[Audio Analyzer]:</b> Extracting soundtrack details...";
+            statusPanel.innerHTML = "🎵 Extracting Audio Details...";
             
             try {
                 const response = await fetch('/api/fetch-info', {
@@ -198,64 +175,51 @@
                     body: JSON.stringify({ url, type: 'audio' })
                 });
                 const data = await response.json();
-                
                 if(data.success) {
                     statusPanel.style.display = 'none';
-                    document.getElementById('audioTitle').innerHTML = "🎵 <b>Audio Title:</b> " + data.title;
-                    if(data.thumbnail) {
-                        document.getElementById('audioThumb').src = data.thumbnail;
-                        document.getElementById('audioThumb').style.display = 'block';
-                    }
+                    document.getElementById('audioTitle').innerHTML = "🎵 " + data.title;
+                    if(data.thumbnail) document.getElementById('audioThumb').src = data.thumbnail;
                     const dropdown = document.getElementById('audioQualityDropdown');
                     dropdown.innerHTML = "";
                     data.formats.forEach(f => {
-                        const option = document.createElement('option');
-                        option.value = f.id;
-                        option.innerText = f.label;
-                        dropdown.appendChild(option);
+                        const opt = document.createElement('option');
+                        opt.value = f.id; opt.innerText = f.label; dropdown.appendChild(opt);
                     });
                     audioPreviewCard.style.display = 'block';
-                } else {
-                    statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> " + data.message;
-                }
-            } catch(err) {
-                statusPanel.innerHTML = "❌ <b>[Pipeline Timeout]:</b> Connection failed.";
-            }
+                } else { statusPanel.innerHTML = "❌ " + data.message; }
+            } catch(err) { statusPanel.innerHTML = "❌ Connection failed."; }
         });
 
         document.getElementById('startAudioDownloadBtn').addEventListener('click', async () => {
+            const url = document.getElementById('audioUrlInput').value;
             const quality = document.getElementById('audioQualityDropdown').value;
             const statusPanel = document.getElementById('download-status');
             statusPanel.style.display = 'block';
-            statusPanel.innerHTML = "🎛️ <b>[Master Studio Engine]:</b> Transcoding audio...";
+            statusPanel.innerHTML = "🎛️ Extracting MP3...";
             
             try {
                 const response = await fetch('/api/prepare-audio', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: currentAudioUrl, quality })
+                    body: JSON.stringify({ url, quality })
                 });
                 const data = await response.json();
                 if(data.success) {
-                    statusPanel.innerHTML = "🔥 <b>[Master Audio Ripped]:</b> Downloading...";
+                    statusPanel.innerHTML = "🔥 Downloading Audio File...";
                     window.location.href = "/api/chrome-popup?file=" + encodeURIComponent(data.filename);
-                } else {
-                    statusPanel.innerHTML = "❌ <b>[Extraction Error]:</b> " + data.message;
-                }
-            } catch(err) {
-                statusPanel.innerHTML = "❌ <b>[Pipeline Timeout]:</b> Server error.";
-            }
+                } else { statusPanel.innerHTML = "❌ " + data.message; }
+            } catch(err) { statusPanel.innerHTML = "❌ Server error."; }
         });
 
-        // --- MOVIE SEARCH FUNCTION ---
+        // --- REAL MOVIE / SERIES SEARCH ---
         async function findMovie() {
             const name = document.getElementById('globalMovieName').value;
-            if(!name) return alert('Pehle movie ka naam likhein!');
+            if(!name) return alert('Pehle Movie ya Series ka naam likhein!');
 
             const loader = document.getElementById('movieLoader');
-            const resultBox = document.getElementById('globalMovieResult');
+            const resultsBox = document.getElementById('searchResultsList');
             loader.style.display = 'block';
-            resultBox.style.display = 'none';
+            resultsBox.innerHTML = '';
 
             try {
                 const response = await fetch(`/api/search-movie?name=${encodeURIComponent(name)}`);
@@ -263,14 +227,21 @@
                 loader.style.display = 'none';
 
                 if(data.success) {
-                    document.getElementById('foundMovieTitle').innerText = "Found: " + data.title;
-                    const player = document.getElementById('globalPlayer');
-                    document.getElementById('globalSource').src = data.downloadUrl;
-                    player.load();
-                    document.getElementById('globalDownloadBtn').href = data.downloadUrl;
-                    resultBox.style.display = 'block';
+                    data.results.forEach(m => {
+                        resultsBox.innerHTML += `
+                            <div class="movie-card">
+                                <img src="${m.poster}" alt="Poster">
+                                <div style="font-weight:bold; color:#00f2fe;">${m.title} (${m.year})</div>
+                                <div style="font-size:11px; color:#ffbc00; text-transform:uppercase; margin:4px 0;">TYPE: ${m.type}</div>
+                                <div class="action-btn-group">
+                                    <a href="${m.watchUrl}" target="_blank" class="action-btn" style="background:#00ff87; color:#000;">▶ Stream / Watch</a>
+                                    <a href="${m.downloadUrl}" target="_blank" class="action-btn" style="background:#ff007f; color:#fff;">📥 Search Sources</a>
+                                </div>
+                            </div>
+                        `;
+                    });
                 } else {
-                    alert(data.error || 'Movie not found!');
+                    resultsBox.innerHTML = `<p style="color:red;">${data.error || 'Nahi mili!'}</p>`;
                 }
             } catch (err) {
                 loader.style.display = 'none';
