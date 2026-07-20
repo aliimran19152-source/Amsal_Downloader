@@ -31,24 +31,25 @@ function formatBytes(bytes) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-// --- ROUTE 1: FETCH METADATA (VIDEO & AUDIO) ---
+// --- ROUTE 1: UNIVERSAL METADATA FETCH (YT, TIKTOK, PINTEREST, INSTA, FB, ETC) ---
 app.post('/api/fetch-info', (req, res) => {
     const { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
 
-    const command = `${YTDLP} --dump-json --no-warnings "${url}"`;
+    // Universal Flags: User-agent & extractor args to bypass blocks across platforms
+    const command = `${YTDLP} --dump-json --no-warnings --no-check-certificate --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "${url}"`;
     
-    exec(command, { maxBuffer: 1024 * 1024 * 20 }, (err, stdout) => {
+    exec(command, { maxBuffer: 1024 * 1024 * 30 }, (err, stdout) => {
         if (err || !stdout) {
-            return res.json({ success: false, message: "Could not parse link or yt-dlp issue." });
+            return res.json({ success: false, message: "Could not fetch media. Make sure link is public and valid." });
         }
         
         try {
             const meta = JSON.parse(stdout);
             const rawFormats = meta.formats || [];
-            const duration = meta.duration || 30; // Short duration fallback for Reels/TikToks
+            const duration = meta.duration || 30;
 
-            // AUDIO ENGINE FIX
+            // --- UNIVERSAL AUDIO ENGINE ---
             if (type === 'audio' || req.body.engine === 'audio') {
                 const audioTiers = [
                     { id: "320K", label: "Studio Master (320kbps MP3)", bitrate: 320, fallbackMb: 5.5 },
@@ -57,20 +58,20 @@ app.post('/api/fetch-info', (req, res) => {
                 ];
 
                 let audioFormats = audioTiers.map(tier => {
-                    let calcSize = (duration > 0 && duration < 3600) ? formatBytes((tier.bitrate * 1000 * duration) / 8) : null;
+                    let calcSize = (duration > 0 && duration < 7200) ? formatBytes((tier.bitrate * 1000 * duration) / 8) : null;
                     let sizeStr = calcSize || `${tier.fallbackMb} MB`;
                     return { id: tier.id, label: `${tier.label} [~${sizeStr}]` };
                 });
 
                 return res.json({
                     success: true,
-                    title: meta.title || meta.description?.substring(0, 30) || "Extracted Audio",
-                    thumbnail: meta.thumbnail || (meta.thumbnails && meta.thumbnails.length ? meta.thumbnails[0].url : ""),
+                    title: meta.title || meta.description?.substring(0, 35) || "Audio Track",
+                    thumbnail: meta.thumbnail || (meta.thumbnails && meta.thumbnails.length ? meta.thumbnails[meta.thumbnails.length - 1].url : ""),
                     formats: audioFormats
                 });
             }
 
-            // VIDEO ENGINE FIX (ACCURATE MB CALCULATION)
+            // --- UNIVERSAL VIDEO ENGINE ---
             const qualityTiers = [
                 { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", defaultMb: 45.0 },
                 { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", defaultMb: 25.0 },
@@ -82,27 +83,26 @@ app.post('/api/fetch-info', (req, res) => {
             
             let availableOptions = [];
             let maxFoundHeight = 0;
-            rawFormats.forEach(f => { if (f.height > maxFoundHeight) maxFoundHeight = f.height; });
+            
+            rawFormats.forEach(f => { 
+                if (f.height && f.height > maxFoundHeight) maxFoundHeight = f.height; 
+            });
 
-            // If it's Instagram/TikTok/Short video, height fallback
-            if (maxFoundHeight === 0 && (meta.width || meta.height)) {
+            if (maxFoundHeight === 0) {
                 maxFoundHeight = meta.height || 720;
-            } else if (maxFoundHeight === 0) {
-                maxFoundHeight = 720;
             }
 
             qualityTiers.forEach(tier => {
                 const isAvailable = (tier.maxH <= (maxFoundHeight + 100));
                 
                 if (isAvailable) {
-                    const matchingStreams = rawFormats.filter(f => f.height > tier.minH && f.height <= tier.maxH);
+                    const matchingStreams = rawFormats.filter(f => f.height && f.height > tier.minH && f.height <= tier.maxH);
                     matchingStreams.sort((a, b) => (b.filesize || b.filesize_approx || 0) - (a.filesize || a.filesize_approx || 0));
                     const bestStream = matchingStreams[0];
 
                     let realBytes = bestStream ? (bestStream.filesize || bestStream.filesize_approx || 0) : (meta.filesize || meta.filesize_approx || 0);
                     let sizeStr = formatBytes(realBytes);
 
-                    // Accurate duration based estimate if raw filesize missing
                     if (!sizeStr && duration > 0) {
                         let estimateBitrate = tier.maxH >= 1080 ? 3500 : (tier.maxH >= 720 ? 1800 : 800);
                         sizeStr = formatBytes((estimateBitrate * 1000 * duration) / 8);
@@ -112,6 +112,7 @@ app.post('/api/fetch-info', (req, res) => {
                         sizeStr = `${tier.defaultMb} MB`;
                     }
 
+                    // Universal stream selector fallback (works on YT, Pinterest, TikTok, FB, etc.)
                     const formatSelector = bestStream 
                         ? `bestvideo[format_id=${bestStream.format_id}]+bestaudio/bestvideo[height<=${tier.maxH}]+bestaudio/best`
                         : `bestvideo[height<=${tier.maxH}]+bestaudio/best`;
@@ -124,44 +125,58 @@ app.post('/api/fetch-info', (req, res) => {
 
             return res.json({ 
                 success: true, 
-                title: meta.title || meta.description?.substring(0, 30) || "Target Media Stream", 
-                thumbnail: meta.thumbnail || (meta.thumbnails && meta.thumbnails.length ? meta.thumbnails[0].url : ""), 
+                title: meta.title || meta.description?.substring(0, 35) || "Downloaded Media", 
+                thumbnail: meta.thumbnail || (meta.thumbnails && meta.thumbnails.length ? meta.thumbnails[meta.thumbnails.length - 1].url : ""), 
                 formats: availableOptions 
             });
 
         } catch (e) {
-            return res.json({ success: false, message: "Metadata processing error." });
+            return res.json({ success: false, message: "Metadata parsing error." });
         }
     });
 });
 
-// --- ROUTE 2: PREPARE VIDEO ---
+// --- ROUTE 2: UNIVERSAL PREPARE VIDEO ---
 app.post('/api/prepare-video', (req, res) => {
     const { url, formatId } = req.body;
     if (!url) return res.json({ success: false, message: "Invalid parameters." });
 
     const outputPath = path.join(TMP_DIR, `video_${Date.now()}.mp4`);
-    const cmd = `${YTDLP} -f "${formatId && formatId !== 'disabled' ? formatId : 'best'}" --no-playlist -o "${outputPath}" "${url}"`;
+    const targetFormat = (formatId && formatId !== 'disabled') ? formatId : 'bestvideo+bestaudio/best';
+    
+    // Universal download command with automatic fallback
+    const cmd = `${YTDLP} --no-warnings --no-playlist -f "${targetFormat}" -o "${outputPath}" "${url}"`;
 
-    exec(cmd, { maxBuffer: 1024 * 1024 * 30 }, (err) => {
-        if (err || !fs.existsSync(outputPath)) return res.json({ success: false, message: "Download failed." });
+    exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (err) => {
+        if (err || !fs.existsSync(outputPath)) {
+            // Fallback command if specific format fails (e.g. Pinterest/TikTok direct video)
+            const fallbackCmd = `${YTDLP} --no-warnings --no-playlist -f "best" -o "${outputPath}" "${url}"`;
+            exec(fallbackCmd, (fErr) => {
+                if (fErr || !fs.existsSync(outputPath)) {
+                    return res.json({ success: false, message: "Video extraction failed." });
+                }
+                res.json({ success: true, filename: path.basename(outputPath) });
+            });
+            return;
+        }
         res.json({ success: true, filename: path.basename(outputPath) });
     });
 });
 
-// --- ROUTE 3: PREPARE AUDIO ---
+// --- ROUTE 3: UNIVERSAL PREPARE AUDIO ---
 app.post('/api/prepare-audio', (req, res) => {
     const { url } = req.body;
     if (!url) return res.json({ success: false, message: "Invalid URL." });
 
     const outputPath = path.join(TMP_DIR, `audio_${Date.now()}.mp3`);
-    const cmd = `${YTDLP} -f "ba/b" --extract-audio --audio-format mp3 --no-playlist -o "${outputPath}" "${url}"`;
+    // Extract best audio or best format available and format to MP3/M4A
+    const cmd = `${YTDLP} --no-warnings --no-playlist -f "ba/b" -x --audio-format mp3 -o "${outputPath}" "${url}"`;
 
-    exec(cmd, { maxBuffer: 1024 * 1024 * 30 }, (err) => {
+    exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (err) => {
         if (err || !fs.existsSync(outputPath)) {
-            // Fallback command if ffmpeg extract fails
+            // Fallback direct audio extract without re-encoding if ffmpeg isn't needed
             const altPath = path.join(TMP_DIR, `audio_${Date.now()}.m4a`);
-            const altCmd = `${YTDLP} -f "ba/b" -o "${altPath}" "${url}"`;
+            const altCmd = `${YTDLP} --no-warnings --no-playlist -f "ba/b" -o "${altPath}" "${url}"`;
             exec(altCmd, (altErr) => {
                 if (altErr || !fs.existsSync(altPath)) {
                     return res.json({ success: false, message: "Audio extraction failed." });
