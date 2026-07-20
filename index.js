@@ -62,6 +62,7 @@ app.get('/', (req, res) => {
                 <div class="tab" onclick="switchTab('audio-sec', this)">Audio Engine</div>
             </div>
 
+            <!-- VIDEO SECTION -->
             <div id="video-sec" class="form-section active">
                 <form id="fetchForm" autocomplete="off">
                     <label>Target Media URL (Video)</label>
@@ -72,12 +73,13 @@ app.get('/', (req, res) => {
                 <div id="previewCard" class="preview-card">
                     <div id="videoTitle" class="preview-title">Video Title</div>
                     <img id="videoThumb" src="" alt="Thumbnail">
-                    <label>Select Premium Quality</label>
+                    <label>Select Video Stream Quality</label>
                     <select id="qualityDropdown" class="quality-select"></select>
                     <button id="startDownloadBtn" class="btn-download">Download In Selected Quality</button>
                 </div>
             </div>
 
+            <!-- AUDIO SECTION -->
             <div id="audio-sec" class="form-section">
                 <form id="audioFetchForm" autocomplete="off">
                     <label>Target Media URL (Audio / Sound Extract)</label>
@@ -118,7 +120,7 @@ app.get('/', (req, res) => {
                 
                 previewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching unique best resolution tiers...";
+                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Parsing original formats and sizes...";
                 
                 try {
                     const response = await fetch('/api/fetch-info', {
@@ -162,7 +164,7 @@ app.get('/', (req, res) => {
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "💎 <b>[Muxing Best Quality]:</b> Pulling maximum uncompressed bitrate stream...";
+                statusPanel.innerHTML = "💎 <b>[Raw Pipeline]:</b> Downloading exact selected format...";
                 
                 try {
                     const response = await fetch('/api/prepare-video', {
@@ -267,10 +269,8 @@ app.post('/api/fetch-info', (req, res) => {
 
     const command = `yt-dlp --dump-json --no-warnings --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
     
-    exec(command, { maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
-        if (err) {
-            return res.json({ success: false, message: "Could not parse link or unsupported site." });
-        }
+    exec(command, { maxBuffer: 1024 * 1024 * 50 }, (err, stdout) => {
+        if (err) return res.json({ success: false, message: "Could not parse link." });
         
         try {
             const meta = JSON.parse(stdout);
@@ -280,69 +280,51 @@ app.post('/api/fetch-info', (req, res) => {
                     success: true,
                     title: meta.title || "Extracted Audio Track",
                     thumbnail: meta.thumbnail || "",
-                    formats: [
-                        { id: "bestaudio/best", label: "Studio Master Quality (Highest Bitrate)" }
-                    ]
+                    formats: [{ id: "bestaudio/best", label: "Studio Master Quality (Highest Bitrate)" }]
                 });
             }
 
-            const rawFormats = meta.formats || [];
+            let formatsList = [];
             
-            // Defination of standard tiers
-            const targetTiers = [
-                { name: "4K UHD", maxH: 4320, minH: 2161 },
-                { name: "2K QuadHD", maxH: 2160, minH: 1441 },
-                { name: "1080p Full HD", maxH: 1440, minH: 1081 },
-                { name: "720p HD", maxH: 1080, minH: 721 },
-                { name: "480p HQ", maxH: 720, minH: 481 },
-                { name: "360p Standard", maxH: 480, minH: 0 }
-            ];
-
-            let mappedFormats = [];
-
-            // Add Absolute Best option directly at top
-            mappedFormats.push({
-                id: "bestvideo+bestaudio/best",
-                label: "🌟 Absolute Uncompressed Best Quality (Original Raw Size)"
+            // Top default option (Forces absolute original stream)
+            formatsList.push({
+                id: "best",
+                label: "🌟 Absolute Highest Original Stream (Full Raw Quality)"
             });
 
-            // Find unique best stream for each target resolution tier
-            targetTiers.forEach(tier => {
-                let validStreams = rawFormats.filter(f => f.height > tier.minH && f.height <= tier.maxH && f.vcodec !== 'none');
+            if (meta.formats && Array.isArray(meta.formats)) {
+                let seenResolutions = new Set();
                 
-                if (validStreams.length > 0) {
-                    // Sort by bitrate (tbr) to strictly catch the heaviest/best option
-                    validStreams.sort((a, b) => (b.tbr || 0) - (a.tbr || 0));
-                    let bestStream = validStreams[0];
-                    
-                    let sizeStr = 'Unknown Size';
-                    if (bestStream.filesize) {
-                        sizeStr = `${(bestStream.filesize / (1024 * 1024)).toFixed(2)} MB`;
-                    } else if (bestStream.filesize_approx) {
-                        sizeStr = `${(bestStream.filesize_approx / (1024 * 1024)).toFixed(2)} MB`;
-                    } else if (meta.duration) {
-                        // Safe backup fallback size estimation based on high-bitrate matching
-                        let estimatedBitrate = bestStream.tbr ? bestStream.tbr : (tier.maxH === 1440 ? 4500 : 2500);
-                        sizeStr = `~${((estimatedBitrate * meta.duration) / 8 / 1024).toFixed(1)} MB`;
+                // Reverse to check best quality formats first
+                meta.formats.slice().reverse().forEach(f => {
+                    if (f.vcodec !== 'none') {
+                        let resName = f.height ? `${f.height}p` : (f.format_note || 'HQ');
+                        
+                        // Avoid duplicates of same resolution
+                        if (!seenResolutions.has(resName)) {
+                            seenResolutions.add(resName);
+                            
+                            let size = 'Original Size';
+                            if (f.filesize) {
+                                size = `${(f.filesize / (1024 * 1024)).toFixed(2)} MB`;
+                            } else if (f.filesize_approx) {
+                                size = `~${(f.filesize_approx / (1024 * 1024)).toFixed(2)} MB`;
+                            }
+
+                            formatsList.push({
+                                id: f.format_id,
+                                label: `🎬 Quality: ${resName} | Size: ${size}`
+                            });
+                        }
                     }
-
-                    mappedFormats.push({
-                        id: `bestvideo[height<=${tier.maxH}]+bestaudio/best`,
-                        label: `🎬 ${tier.name} [${bestStream.height}p] | Exact Size: ${sizeStr}`
-                    });
-                }
-            });
-
-            // Fallback unique progressive check if no separate components mapped
-            if (mappedFormats.length === 1 && rawFormats.length > 0) {
-                mappedFormats.push({ id: "best", label: "Standard Progressive Stream (Auto Best)" });
+                });
             }
 
             res.json({ 
                 success: true, 
                 title: meta.title || "External Video Stream", 
                 thumbnail: meta.thumbnail || "", 
-                formats: mappedFormats 
+                formats: formatsList 
             });
 
         } catch (e) {
@@ -359,17 +341,21 @@ app.post('/api/prepare-video', (req, res) => {
     const outputFilename = `video_${Date.now()}.%(ext)s`;
     const outputPath = path.join(TMP_DIR, outputFilename);
     
-    let formatSelector = formatId || "bestvideo+bestaudio/best";
+    // Simple & Strict format flag matching
+    let targetFormat = formatId || "best";
+    if (targetFormat !== "best") {
+        targetFormat = `${targetFormat}+bestaudio/best`;
+    }
 
-    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${formatSelector}" "${url}" -o "${outputPath}"`;
+    const command = `yt-dlp --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -f "${targetFormat}" "${url}" -o "${outputPath}"`;
 
-    exec(command, { maxBuffer: 1024 * 1024 * 250 }, (err, stdout, stderr) => {
+    exec(command, { maxBuffer: 1024 * 1024 * 250 }, (err) => {
         const files = fs.readdirSync(TMP_DIR);
         const downloadedFile = files.find(f => f.startsWith(`video_${outputFilename.split('_')[1].split('.')[0]}`));
 
         if (err || !downloadedFile) {
-            console.error("Muxing error, forcing standard stream pull...");
-            const fallbackPath = path.join(TMP_DIR, `video_fallback_${Date.now()}.mp4`);
+            // Direct force fallback to single best stream (12.5MB)
+            const fallbackPath = path.join(TMP_DIR, `video_raw_${Date.now()}.mp4`);
             const fallbackCommand = `yt-dlp --no-check-certificates -f "best" "${url}" -o "${fallbackPath}"`;
             
             exec(fallbackCommand, { maxBuffer: 1024 * 1024 * 250 }, (fErr) => {
