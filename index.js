@@ -39,7 +39,6 @@ app.get('/', (req, res) => {
             .preview-card img { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid #444; display: block; max-height: 300px; object-fit: cover; }
             .preview-title { font-weight: bold; font-size: 15px; color: #fff; margin-bottom: 15px; line-height: 1.4; background: #21262d; padding: 10px; border-radius: 6px; border-left: 3px solid #ffbc00; }
             
-            .quality-select { width: 100%; padding: 12px; background: #161b22; color: #fff; border: 1px solid #00f2fe; border-radius: 8px; font-size: 15px; margin-bottom: 10px; outline: none; }
             .tabs { display: flex; justify-content: space-around; margin-bottom: 20px; border-bottom: 1px solid #30363d; }
             .tab { padding: 10px 20px; cursor: pointer; color: #8b949e; font-weight: bold; }
             .tab.active { color: #00f2fe; border-bottom: 2px solid #00f2fe; }
@@ -57,37 +56,33 @@ app.get('/', (req, res) => {
                 <div class="tab" onclick="switchTab('audio-sec', this)">Audio Engine</div>
             </div>
 
-            <!-- VIDEO SECTION (FORM REMOVED TO PREVENT PAGE RELOAD) -->
+            <!-- VIDEO SECTION -->
             <div id="video-sec" class="form-section active">
                 <div>
                     <label>Target Media URL (Video)</label>
-                    <input type="text" id="urlInput" placeholder="Paste Video Link (YT Shorts/Video, TikTok...)">
-                    <button type="button" class="btn-fetch" id="btnVideoFetch" onclick="fetchVideoDetails()">Fetch Video Details & Qualities</button>
+                    <input type="text" id="urlInput" placeholder="Paste Video Link (YT Shorts/Video, TikTok, Insta...)">
+                    <button type="button" class="btn-fetch" id="btnVideoFetch" onclick="processMedia('video')">Fetch Video Details</button>
                 </div>
 
                 <div id="previewCard" class="preview-card">
                     <div id="videoTitle" class="preview-title">Video Title</div>
                     <img id="videoThumb" src="" alt="Thumbnail">
-                    <label>Select Quality</label>
-                    <select id="qualityDropdown" class="quality-select"></select>
-                    <a id="startDownloadBtn" class="btn-download" href="#" target="_blank" rel="noopener">Download Selected Quality</a>
+                    <a id="startDownloadBtn" class="btn-download" href="#" target="_blank" rel="noopener">⬇️ DOWNLOAD VIDEO FILE</a>
                 </div>
             </div>
 
-            <!-- AUDIO SECTION (FORM REMOVED TO PREVENT PAGE RELOAD) -->
+            <!-- AUDIO SECTION -->
             <div id="audio-sec" class="form-section">
                 <div>
                     <label>Target Media URL (Audio / Sound Extract)</label>
                     <input type="text" id="audioUrlInput" placeholder="Paste link to extract pure HQ Audio/Music">
-                    <button type="button" class="btn-audio-fetch" id="btnAudioFetch" onclick="fetchAudioDetails()">Fetch Audio Details & Bitrates</button>
+                    <button type="button" class="btn-audio-fetch" id="btnAudioFetch" onclick="processMedia('audio')">Fetch Audio Details</button>
                 </div>
 
                 <div id="audioPreviewCard" class="preview-card">
                     <div id="audioTitle" class="preview-title">Audio Title</div>
                     <img id="audioThumb" src="" alt="Thumbnail">
-                    <label>Select Master Bitrate</label>
-                    <select id="audioQualityDropdown" class="quality-select"></select>
-                    <a id="startAudioDownloadBtn" class="btn-download" style="background: linear-gradient(45deg, #ff007f, #7f00ff); color: #fff;" href="#" target="_blank" rel="noopener">Extract Selected Audio</a>
+                    <a id="startAudioDownloadBtn" class="btn-download" style="background: linear-gradient(45deg, #ff007f, #7f00ff); color: #fff;" href="#" target="_blank" rel="noopener">🎵 EXTRACT AUDIO TRACK</a>
                 </div>
             </div>
 
@@ -95,9 +90,6 @@ app.get('/', (req, res) => {
         </div>
 
         <script>
-            let videoStreamsMap = {};
-            let audioStreamsMap = {};
-
             function switchTab(sectionId, tabEl) {
                 document.querySelectorAll('.form-section').forEach(s => s.classList.remove('active'));
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -106,222 +98,175 @@ app.get('/', (req, res) => {
                 document.getElementById('download-status').style.display = 'none';
             }
 
-            function getYTId(url) {
-                let match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
-                return match ? match[1] : null;
-            }
+            async function processMedia(type) {
+                const isAudio = type === 'audio';
+                const inputId = isAudio ? 'audioUrlInput' : 'urlInput';
+                const btnId = isAudio ? 'btnAudioFetch' : 'btnVideoFetch';
+                const cardId = isAudio ? 'audioPreviewCard' : 'previewCard';
+                const titleId = isAudio ? 'audioTitle' : 'videoTitle';
+                const thumbId = isAudio ? 'audioThumb' : 'videoThumb';
+                const dlBtnId = isAudio ? 'startAudioDownloadBtn' : 'startDownloadBtn';
 
-            // --- VIDEO ENGINE ACTIONS ---
-            async function fetchVideoDetails() {
-                const urlInput = document.getElementById('urlInput');
+                const urlInput = document.getElementById(inputId);
                 const url = urlInput.value.trim();
                 const statusPanel = document.getElementById('download-status');
-                const previewCard = document.getElementById('previewCard');
-                const btn = document.getElementById('btnVideoFetch');
-                
-                if(!url) {
+                const card = document.getElementById(cardId);
+                const btn = document.getElementById(btnId);
+
+                if (!url) {
                     statusPanel.style.display = 'block';
-                    statusPanel.innerHTML = "⚠️ <b>[Input Error]:</b> Pehle link paste karein!";
+                    statusPanel.innerHTML = "⚠️ <b>[Error]:</b> Pehle link paste karein!";
                     return;
                 }
 
-                previewCard.style.display = 'none';
+                card.style.display = 'none';
                 statusPanel.style.display = 'block';
                 btn.disabled = true;
-                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching media meta-data and sizing...";
+                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Express Server extraction in progress...";
 
-                const ytId = getYTId(url);
-
-                if (ytId) {
-                    const pipedNodes = [
-                        'https://pipedapi.kavin.rocks',
-                        'https://api.piped.private.coffee',
-                        'https://pipedapi.mha.fi',
-                        'https://pipedapi.adminforge.de'
-                    ];
-
-                    let success = false;
-                    for (let node of pipedNodes) {
-                        try {
-                            let res = await fetch(node + '/streams/' + ytId);
-                            if (!res.ok) continue;
-                            let data = await res.json();
-
-                            if (data && data.videoStreams && data.videoStreams.length > 0) {
-                                statusPanel.style.display = 'none';
-                                document.getElementById('videoTitle').innerHTML = "🎬 <b>Title:</b> " + (data.title || "YouTube Video");
-                                document.getElementById('videoThumb').src = data.thumbnailUrl || ("https://img.youtube.com/vi/" + ytId + "/hqdefault.jpg");
-                                document.getElementById('videoThumb').style.display = 'block';
-
-                                const dropdown = document.getElementById('qualityDropdown');
-                                dropdown.innerHTML = "";
-                                videoStreamsMap = {};
-
-                                data.videoStreams.forEach((stream, idx) => {
-                                    if(stream.url && stream.quality) {
-                                        videoStreamsMap[idx] = stream.url;
-                                        const option = document.createElement('option');
-                                        option.value = idx;
-                                        option.innerText = stream.quality + " (" + (stream.format || "MP4") + ")";
-                                        dropdown.appendChild(option);
-                                    }
-                                });
-
-                                document.getElementById('startDownloadBtn').href = videoStreamsMap[0] || "#";
-                                previewCard.style.display = 'block';
-                                success = true;
-                                break;
-                            }
-                        } catch(err) { continue; }
-                    }
+                try {
+                    const response = await fetch('/api/fetch-info', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url, type })
+                    });
+                    const data = await response.json();
 
                     btn.disabled = false;
-                    if (!success) {
-                        statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> Stream processing delayed. Click FETCH again.";
-                    }
-                    return;
-                }
 
-                // TikTok Handler
-                if (url.includes('tiktok.com')) {
-                    try {
-                        let res = await fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(url));
-                        let data = await res.json();
-                        btn.disabled = false;
-
-                        if (data && data.data) {
-                            statusPanel.style.display = 'none';
-                            document.getElementById('videoTitle').innerHTML = "🎬 <b>Title:</b> " + (data.data.title || "TikTok Video");
-                            document.getElementById('videoThumb').src = data.data.cover || "";
-                            document.getElementById('videoThumb').style.display = data.data.cover ? 'block' : 'none';
-
-                            const dropdown = document.getElementById('qualityDropdown');
-                            dropdown.innerHTML = "<option value='hd'>HD Video (No Watermark)</option>";
-                            
-                            videoStreamsMap = { 'hd': data.data.hdplay || data.data.play };
-                            document.getElementById('startDownloadBtn').href = videoStreamsMap['hd'];
-                            previewCard.style.display = 'block';
-                            return;
+                    if (data.success) {
+                        statusPanel.style.display = 'none';
+                        document.getElementById(titleId).innerHTML = (isAudio ? "🎵 " : "🎬 ") + "<b>Title:</b> " + data.title;
+                        
+                        const thumbEl = document.getElementById(thumbId);
+                        if (data.thumbnail) {
+                            thumbEl.src = data.thumbnail;
+                            thumbEl.style.display = 'block';
+                        } else {
+                            thumbEl.style.display = 'none';
                         }
-                    } catch(e) {}
-                }
 
-                btn.disabled = false;
-                statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> Invalid or unsupported link.";
-            }
-
-            document.getElementById('qualityDropdown').addEventListener('change', (e) => {
-                const selectedUrl = videoStreamsMap[e.target.value];
-                if(selectedUrl) document.getElementById('startDownloadBtn').href = selectedUrl;
-            });
-
-            // --- AUDIO ENGINE ACTIONS ---
-            async function fetchAudioDetails() {
-                const audioUrlInput = document.getElementById('audioUrlInput');
-                const url = audioUrlInput.value.trim();
-                const statusPanel = document.getElementById('download-status');
-                const audioPreviewCard = document.getElementById('audioPreviewCard');
-                const btn = document.getElementById('btnAudioFetch');
-                
-                if(!url) {
-                    statusPanel.style.display = 'block';
-                    statusPanel.innerHTML = "⚠️ <b>[Input Error]:</b> Pehle audio link paste karein!";
-                    return;
-                }
-
-                audioPreviewCard.style.display = 'none';
-                statusPanel.style.display = 'block';
-                btn.disabled = true;
-                statusPanel.innerHTML = "🎵 <b>[Audio Analyzer]:</b> Extracting soundtrack details and stream metadata...";
-
-                const ytId = getYTId(url);
-
-                if (ytId) {
-                    const pipedNodes = [
-                        'https://pipedapi.kavin.rocks',
-                        'https://api.piped.private.coffee',
-                        'https://pipedapi.mha.fi',
-                        'https://pipedapi.adminforge.de'
-                    ];
-
-                    let success = false;
-                    for (let node of pipedNodes) {
-                        try {
-                            let res = await fetch(node + '/streams/' + ytId);
-                            if (!res.ok) continue;
-                            let data = await res.json();
-
-                            if (data && data.audioStreams && data.audioStreams.length > 0) {
-                                statusPanel.style.display = 'none';
-                                document.getElementById('audioTitle').innerHTML = "🎵 <b>Audio Title:</b> " + (data.title || "Extracted Audio Track");
-                                document.getElementById('audioThumb').src = data.thumbnailUrl || ("https://img.youtube.com/vi/" + ytId + "/hqdefault.jpg");
-                                document.getElementById('audioThumb').style.display = 'block';
-
-                                const dropdown = document.getElementById('audioQualityDropdown');
-                                dropdown.innerHTML = "";
-                                audioStreamsMap = {};
-
-                                data.audioStreams.forEach((stream, idx) => {
-                                    if(stream.url) {
-                                        audioStreamsMap[idx] = stream.url;
-                                        const option = document.createElement('option');
-                                        option.value = idx;
-                                        option.innerText = "HQ Audio Track (" + (stream.mimeType || "Audio") + " - " + (stream.quality || "HQ") + ")";
-                                        dropdown.appendChild(option);
-                                    }
-                                });
-
-                                document.getElementById('startAudioDownloadBtn').href = audioStreamsMap[0] || "#";
-                                audioPreviewCard.style.display = 'block';
-                                success = true;
-                                break;
-                            }
-                        } catch(err) { continue; }
+                        const dlBtn = document.getElementById(dlBtnId);
+                        dlBtn.href = data.downloadUrl;
+                        card.style.display = 'block';
+                    } else {
+                        statusPanel.innerHTML = "❌ <b>[Extraction Error]:</b> " + (data.message || "Media fetch nahi ho saka.");
                     }
-
+                } catch (err) {
                     btn.disabled = false;
-                    if (!success) {
-                        statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> Unable to extract audio track.";
-                    }
-                    return;
+                    statusPanel.innerHTML = "❌ <b>[Server Error]:</b> Connection reset. Dobara try karein.";
                 }
-
-                // TikTok Audio
-                if (url.includes('tiktok.com')) {
-                    try {
-                        let res = await fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(url));
-                        let data = await res.json();
-                        btn.disabled = false;
-
-                        if (data && data.data && data.data.music) {
-                            statusPanel.style.display = 'none';
-                            document.getElementById('audioTitle').innerHTML = "🎵 <b>Audio Title:</b> " + (data.data.music_info?.title || "TikTok Audio");
-                            document.getElementById('audioThumb').src = data.data.cover || "";
-                            document.getElementById('audioThumb').style.display = data.data.cover ? 'block' : 'none';
-
-                            const dropdown = document.getElementById('audioQualityDropdown');
-                            dropdown.innerHTML = "<option value='music'>HQ Audio Track (MP3)</option>";
-                            
-                            audioStreamsMap = { 'music': data.data.music };
-                            document.getElementById('startAudioDownloadBtn').href = audioStreamsMap['music'];
-                            audioPreviewCard.style.display = 'block';
-                            return;
-                        }
-                    } catch(e) {}
-                }
-
-                btn.disabled = false;
-                statusPanel.innerHTML = "❌ <b>[Fetch Error]:</b> Invalid or unsupported audio link.";
             }
-
-            document.getElementById('audioQualityDropdown').addEventListener('change', (e) => {
-                const selectedUrl = audioStreamsMap[e.target.value];
-                if(selectedUrl) document.getElementById('startAudioDownloadBtn').href = selectedUrl;
-            });
         </script>
     </body>
     </html>
     `);
+});
+
+// --- BACKEND ROUTE (PROXIED - NO CORS OR BRAVE SHIELD ISSUES) ---
+app.post('/api/fetch-info', async (req, res) => {
+    const { url, type } = req.body;
+    if (!url) return res.json({ success: false, message: "URL empty hai." });
+
+    try {
+        // 1. TikTok Engine (TikWM)
+        if (url.includes('tiktok.com')) {
+            const tikRes = await fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(url));
+            const tikData = await tikRes.json();
+            if (tikData && tikData.data) {
+                const isAudio = type === 'audio';
+                return res.json({
+                    success: true,
+                    title: tikData.data.title || "TikTok Media",
+                    thumbnail: tikData.data.cover || "",
+                    downloadUrl: isAudio ? (tikData.data.music || tikData.data.play) : (tikData.data.hdplay || tikData.data.play)
+                });
+            }
+        }
+
+        // 2. Cobalt API Engine (YouTube / Insta / TikTok)
+        try {
+            const cobaltRes = await fetch('https://api.cobalt.tools/', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    url: url,
+                    downloadMode: type === 'audio' ? 'audio' : 'auto',
+                    videoQuality: '1080'
+                })
+            });
+
+            const cobaltData = await cobaltRes.json();
+
+            if (cobaltData && (cobaltData.url || cobaltData.picker)) {
+                let dlUrl = cobaltData.url;
+                if (!dlUrl && cobaltData.picker && cobaltData.picker.length > 0) {
+                    dlUrl = cobaltData.picker[0].url;
+                }
+                if (dlUrl) {
+                    return res.json({
+                        success: true,
+                        title: cobaltData.filename || "Extracted Stream",
+                        thumbnail: "",
+                        downloadUrl: dlUrl
+                    });
+                }
+            }
+        } catch(e) {}
+
+        // 3. YouTube Fallback Engine (Piped Nodes)
+        const getYTId = (u) => {
+            let m = u.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+            return m ? m[1] : null;
+        };
+
+        const ytId = getYTId(url);
+        if (ytId) {
+            const pipedNodes = [
+                'https://pipedapi.kavin.rocks',
+                'https://api.piped.private.coffee',
+                'https://pipedapi.mha.fi',
+                'https://pipedapi.adminforge.de'
+            ];
+
+            for (let node of pipedNodes) {
+                try {
+                    const pRes = await fetch(`${node}/streams/${ytId}`);
+                    if (!pRes.ok) continue;
+                    const pData = await pRes.json();
+
+                    if (type === 'audio' && pData.audioStreams && pData.audioStreams.length > 0) {
+                        return res.json({
+                            success: true,
+                            title: pData.title || "YouTube Audio",
+                            thumbnail: pData.thumbnailUrl || `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
+                            downloadUrl: pData.audioStreams[0].url
+                        });
+                    }
+
+                    if (pData.videoStreams && pData.videoStreams.length > 0) {
+                        const stream = pData.videoStreams.find(s => s.format === 'MPEG-4' && s.quality) || pData.videoStreams[0];
+                        return res.json({
+                            success: true,
+                            title: pData.title || "YouTube Video",
+                            thumbnail: pData.thumbnailUrl || `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
+                            downloadUrl: stream.url
+                        });
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+        }
+
+        return res.json({ success: false, message: "Stream link parse nahi ho saka. Dobara try karein." });
+
+    } catch (err) {
+        return res.json({ success: false, message: "Backend error: " + err.message });
+    }
 });
 
 app.listen(PORT, () => console.log(`Server online on port ${PORT}`));
