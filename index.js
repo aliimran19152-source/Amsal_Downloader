@@ -1,12 +1,9 @@
 const express = require('express');
-const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Front-End Interface
 app.get('/', (req, res) => {
     res.send(`
     <!DOCTYPE html>
@@ -14,7 +11,7 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AMSAL STUDIOS - CORE ENGINE</title>
+        <title>AMSAL STUDIOS - CORE WORKSTATION v2.0</title>
         <style>
             * { box-sizing: border-box; }
             body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, sans-serif; text-align: center; padding: 20px; margin: 0; }
@@ -96,23 +93,48 @@ app.get('/', (req, res) => {
                 const statusBox = document.getElementById('statusBox');
 
                 statusBox.style.display = 'block';
-                statusBox.innerHTML = "⚡ <b>[Bypassing Cloud Firewalls]:</b> Extracting high-speed direct stream...";
+                statusBox.innerHTML = "⚡ <b>[Client-Side Direct Tunnel]:</b> Processing via user client IP...";
 
-                try {
-                    const res = await fetch('/api/process', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url, mode: currentMode, quality })
-                    });
-                    const data = await res.json();
+                // Global direct client-side nodes
+                const nodes = [
+                    'https://api.cobalt.tools',
+                    'https://cobalt.api.redna2.xyz',
+                    'https://co.wuk.sh',
+                    'https://cobalt-api.kwippy.com'
+                ];
 
-                    if (data.success) {
-                        statusBox.innerHTML = "✅ <b>[Extraction Successful]:</b><br><a class='dl-link' href='" + data.url + "' target='_blank' download>⬇️ DOWNLOAD " + (currentMode.toUpperCase()) + " FILE NOW</a>";
-                    } else {
-                        statusBox.innerHTML = "❌ <b>[Error]:</b> " + data.message;
+                let success = false;
+
+                for (let node of nodes) {
+                    try {
+                        const response = await fetch(node + '/', {
+                            method: 'POST',
+                            headers: {
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                url: url,
+                                videoQuality: quality === 'max' ? 'max' : quality,
+                                isAudioOnly: currentMode === 'audio',
+                                aFormat: 'mp3'
+                            })
+                        });
+
+                        const data = await response.json();
+
+                        if (data && data.url) {
+                            statusBox.innerHTML = "✅ <b>[Extraction Successful]:</b><br><a class='dl-link' href='" + data.url + "' target='_blank' rel='noopener noreferrer' download>⬇️ DOWNLOAD " + (currentMode.toUpperCase()) + " FILE NOW</a>";
+                            success = true;
+                            break;
+                        }
+                    } catch (err) {
+                        continue; // try next node if blocked or down
                     }
-                } catch(err) {
-                    statusBox.innerHTML = "❌ <b>[Network Timeout]:</b> Server temporarily busy, please click again.";
+                }
+
+                if (!success) {
+                    statusBox.innerHTML = "❌ <b>[Error]:</b> Service node temporary response limit. Please try pasting the link again in 5 seconds.";
                 }
             });
         </script>
@@ -121,83 +143,4 @@ app.get('/', (req, res) => {
     `);
 });
 
-// Powerful Multi-Engine Pipeline
-app.post('/api/process', async (req, res) => {
-    const { url, mode, quality } = req.body;
-    if (!url) return res.json({ success: false, message: "URL is empty." });
-
-    // Public API Nodes list
-    const nodeCluster = [
-        'https://cobalt.api.redna2.xyz',
-        'https://api.cobalt.tools',
-        'https://co.wuk.sh',
-        'https://cobalt-api.kwippy.com'
-    ];
-
-    const payload = {
-        url: url,
-        videoQuality: quality === 'max' ? 'max' : quality,
-        isAudioOnly: mode === 'audio',
-        aFormat: 'mp3'
-    };
-
-    // Attempt through Primary Nodes
-    for (let instance of nodeCluster) {
-        try {
-            const response = await axios.post(`${instance}/`, payload, {
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-                },
-                timeout: 8000
-            });
-
-            if (response.data && response.data.url) {
-                return res.json({ success: true, url: response.data.url });
-            }
-        } catch (e) {
-            continue; // Failover to next node instantly
-        }
-    }
-
-    // Direct Invidious Fallback Proxy for YouTube Links if Cloud IPs are strictly blocked
-    if (url.includes('youtu')) {
-        try {
-            const videoIdMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:.*v=|.*\/shorts\/))([^?&]+)/);
-            if (videoIdMatch && videoIdMatch[1]) {
-                const vid = videoIdMatch[1];
-                const invidiousInstances = [
-                    'https://invidious.nerdvpn.de',
-                    'https://inv.tux.pizza',
-                    'https://invidious.drgns.space'
-                ];
-
-                for (let inv of invidiousInstances) {
-                    try {
-                        const invRes = await axios.get(`${inv}/api/v1/videos/${vid}`, { timeout: 6000 });
-                        if (invRes.data) {
-                            if (mode === 'audio' && invRes.data.adaptiveFormats) {
-                                const audioStream = invRes.data.adaptiveFormats.find(f => f.type.includes('audio'));
-                                if (audioStream) return res.json({ success: true, url: audioStream.url });
-                            }
-                            if (invRes.data.formatStreams && invRes.data.formatStreams.length > 0) {
-                                const stream = invRes.data.formatStreams.reverse()[0];
-                                return res.json({ success: true, url: stream.url });
-                            }
-                        }
-                    } catch (err) {
-                        continue;
-                    }
-                }
-            }
-        } catch (err) {}
-    }
-
-    res.json({ 
-        success: false, 
-        message: "Render Cloud IP restricted by YouTube. Please click 'Fetch' once again to re-route via back-up proxy." 
-    });
-});
-
-app.listen(PORT, () => console.log(`Engine running on ${PORT}`));
+app.listen(PORT, () => console.log(`Client-Bypass Server running on ${PORT}`));
