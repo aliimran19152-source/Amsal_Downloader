@@ -12,7 +12,6 @@ if (!fs.existsSync(TMP_DIR)) {
     fs.mkdirSync(TMP_DIR);
 }
 
-// Auto Detect yt-dlp executable path
 let YTDLP = 'yt-dlp';
 if (fs.existsSync(path.join(__dirname, 'yt-dlp'))) {
     YTDLP = path.join(__dirname, 'yt-dlp');
@@ -26,7 +25,13 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// --- ROUTE 1: VIDEO / AUDIO METADATA FETCH ---
+// Helper Function: MB Formatter
+function formatBytes(bytes) {
+    if (!bytes || isNaN(bytes) || bytes === 0) return null;
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// --- ROUTE 1: DYNAMIC REAL FILESIZE & RESOLUTION FETCH ---
 app.post('/api/fetch-info', (req, res) => {
     const { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
@@ -49,8 +54,9 @@ app.post('/api/fetch-info', (req, res) => {
                 ];
                 
                 let availableAudio = audioTiers.map(tier => {
-                    let sizeLabel = duration > 0 ? `~${((tier.bitrate * duration) / 8 / 1024).toFixed(1)} MB` : "~5 MB";
-                    return { id: tier.id, label: `${tier.label} [${sizeLabel}]` };
+                    let calcSize = duration > 0 ? formatBytes((tier.bitrate * 1000 * duration) / 8) : null;
+                    let sizeLabel = calcSize ? ` [~${calcSize}]` : "";
+                    return { id: tier.id, label: `${tier.label}${sizeLabel}` };
                 });
 
                 return res.json({
@@ -76,17 +82,30 @@ app.post('/api/fetch-info', (req, res) => {
 
             qualityTiers.forEach(tier => {
                 const hasStream = rawFormats.some(f => f.height > tier.minH && f.height <= tier.maxH) || (tier.maxH === 720 && maxFoundHeight >= 720);
+                
                 if (hasStream && tier.maxH <= (maxFoundHeight + 100)) {
                     const validStreams = rawFormats.filter(f => f.height > tier.minH && f.height <= tier.maxH);
                     validStreams.sort((a, b) => (b.tbr || 0) - (a.tbr || 0));
                     const bestStream = validStreams[0];
-                    let sizeLabel = duration > 0 ? `~${((tier.refBitrate * duration) / 8 / 1024).toFixed(1)} MB` : "~15 MB";
+
+                    // Actual Real Size Calculation
+                    let realBytes = 0;
+                    if (bestStream) {
+                        realBytes = bestStream.filesize || bestStream.filesize_approx || 0;
+                    }
+
+                    let formattedSize = formatBytes(realBytes);
+                    if (!formattedSize && duration > 0) {
+                        formattedSize = formatBytes((tier.refBitrate * 1000 * duration) / 8);
+                    }
+
+                    let sizeLabel = formattedSize ? ` [~${formattedSize}]` : "";
 
                     const formatSelector = bestStream 
                         ? `bestvideo[format_id=${bestStream.format_id}]+bestaudio/bestvideo[height<=${tier.maxH}]+bestaudio`
                         : `bestvideo[height<=${tier.maxH}]+bestaudio/best`;
 
-                    availableOptions.push({ id: formatSelector, label: `${tier.label} [${sizeLabel}]`, disabled: false });
+                    availableOptions.push({ id: formatSelector, label: `${tier.label}${sizeLabel}`, disabled: false });
                 } else {
                     availableOptions.push({ id: "disabled", label: `${tier.label} - [Unavailable]`, disabled: true });
                 }
@@ -128,61 +147,40 @@ app.post('/api/prepare-audio', (req, res) => {
     });
 });
 
-// --- ROUTE 4: REAL MOVIE & SERIES SEARCH ENGINE ---
+// --- ROUTE 4: ACCURATE MOVIE/SERIES REAL SEARCH ---
 app.get('/api/search-movie', async (req, res) => {
     const name = req.query.name;
     if (!name) return res.json({ success: false, error: "Movie/Series name is required." });
     
     try {
-        const tmdbUrl = `https://api.themoviedb.org/3/search/multi?api_key=15d2ea6d0dc1d476efbca3eba2b9bbf3&query=${encodeURIComponent(name)}`;
-        const tmdbRes = await axios.get(tmdbUrl);
-        
-        if (tmdbRes.data && tmdbRes.data.results && tmdbRes.data.results.length > 0) {
-            const results = tmdbRes.data.results.filter(item => item.media_type === 'movie' || item.media_type === 'tv').map(m => {
-                const title = m.title || m.name;
-                const date = m.release_date || m.first_air_date || 'N/A';
-                const year = date !== 'N/A' ? date.split('-')[0] : '';
-                const poster = m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : 'https://via.placeholder.com/300x450?text=No+Poster';
-                
-                return {
-                    title: title,
-                    year: year,
-                    type: m.media_type,
-                    poster: poster,
-                    watchUrl: `https://vidsrc.to/embed/${m.media_type}/${m.id}`,
-                    downloadUrl: `https://archive.org/search.php?query=${encodeURIComponent(title)}`
-                };
-            });
+        const tmdbRes = await axios.get(`https://api.themoviedb.org/3/search/multi?api_key=cba322ef451e065715560a631bf37e1b&query=${encodeURIComponent(name)}`);
 
-            if (results.length > 0) {
-                return res.json({ success: true, results: results });
+        if (tmdbRes.data && tmdbRes.data.results && tmdbRes.data.results.length > 0) {
+            const validMedia = tmdbRes.data.results.filter(item => (item.media_type === 'movie' || item.media_type === 'tv') && item.poster_path);
+            
+            if (validMedia.length > 0) {
+                const parsedResults = validMedia.map(m => {
+                    const title = m.title || m.name || m.original_title;
+                    const date = m.release_date || m.first_air_date || '';
+                    const year = date ? date.split('-')[0] : 'N/A';
+                    
+                    return {
+                        title: title,
+                        year: year,
+                        type: m.media_type === 'tv' ? 'Web Series' : 'Movie',
+                        poster: `https://image.tmdb.org/t/p/w500${m.poster_path}`,
+                        watchUrl: `https://vidsrc.to/embed/${m.media_type}/${m.id}`,
+                        downloadUrl: `https://archive.org/search.php?query=${encodeURIComponent(title)}`
+                    };
+                });
+                return res.json({ success: true, results: parsedResults });
             }
         }
 
-        return res.json({
-            success: true,
-            results: [{
-                title: name,
-                year: "Latest",
-                type: "movie/series",
-                poster: "https://via.placeholder.com/300x450?text=" + encodeURIComponent(name),
-                watchUrl: `https://vidsrc.to/embed/movie/${encodeURIComponent(name)}`,
-                downloadUrl: `https://archive.org/search.php?query=${encodeURIComponent(name)}`
-            }]
-        });
+        return res.json({ success: false, error: "Yeh movie ya series database mein nahi mili. Spelling check karein!" });
 
     } catch (e) {
-        return res.json({
-            success: true,
-            results: [{
-                title: name,
-                year: "Result",
-                type: "movie/series",
-                poster: "https://via.placeholder.com/300x450?text=" + encodeURIComponent(name),
-                watchUrl: `https://vidsrc.to/embed/movie/${encodeURIComponent(name)}`,
-                downloadUrl: `https://archive.org/search.php?query=${encodeURIComponent(name)}`
-            }]
-        });
+        return res.json({ success: false, error: "Search database service issue. Dobara try karein." });
     }
 });
 
