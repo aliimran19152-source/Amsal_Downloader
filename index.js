@@ -31,7 +31,7 @@ function formatBytes(bytes) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-// --- ROUTE 1: DYNAMIC REAL FILESIZE & RESOLUTION FETCH ---
+// --- ROUTE 1: GUARANTEED MB DISPLAY FOR ALL QUALITIES ---
 app.post('/api/fetch-info', (req, res) => {
     const { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
@@ -44,19 +44,19 @@ app.post('/api/fetch-info', (req, res) => {
         try {
             const meta = JSON.parse(stdout);
             const rawFormats = meta.formats || [];
-            const duration = meta.duration || 0;
-            
+            const duration = meta.duration || 30; // Default fallback duration for reels
+
             if (type === 'audio') {
                 const audioTiers = [
-                    { id: "320K", label: "Studio Master (320kbps MP3)", bitrate: 320 },
-                    { id: "256K", label: "High Quality (256kbps MP3)", bitrate: 256 },
-                    { id: "128K", label: "Standard Quality (128kbps MP3)", bitrate: 128 }
+                    { id: "320K", label: "Studio Master (320kbps MP3)", bitrate: 320, defaultMb: 6.5 },
+                    { id: "256K", label: "High Quality (256kbps MP3)", bitrate: 256, defaultMb: 5.0 },
+                    { id: "128K", label: "Standard Quality (128kbps MP3)", bitrate: 128, defaultMb: 2.8 }
                 ];
                 
                 let availableAudio = audioTiers.map(tier => {
                     let calcSize = duration > 0 ? formatBytes((tier.bitrate * 1000 * duration) / 8) : null;
-                    let sizeLabel = calcSize ? ` [~${calcSize}]` : "";
-                    return { id: tier.id, label: `${tier.label}${sizeLabel}` };
+                    let sizeStr = calcSize || `${tier.defaultMb} MB`;
+                    return { id: tier.id, label: `${tier.label} [~${sizeStr}]` };
                 });
 
                 return res.json({
@@ -68,12 +68,12 @@ app.post('/api/fetch-info', (req, res) => {
             }
 
             const qualityTiers = [
-                { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", refBitrate: 25000 },
-                { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", refBitrate: 12000 },
-                { maxH: 1440, minH: 1081, label: "1080p Full HD", refBitrate: 6000 },
-                { maxH: 1080, minH: 721,  label: "720p HD", refBitrate: 3000 },
-                { maxH: 720,  minH: 481,  label: "480p HQ", refBitrate: 1500 },
-                { maxH: 480,  minH: 0,    label: "360p Standard", refBitrate: 800 }
+                { maxH: 4320, minH: 2161, label: "4K UHD (2160p)", refBitrate: 25000, defaultMb: 85.0 },
+                { maxH: 2160, minH: 1441, label: "2K QuadHD (1440p)", refBitrate: 12000, defaultMb: 45.0 },
+                { maxH: 1440, minH: 1081, label: "1080p Full HD", refBitrate: 6000, defaultMb: 22.0 },
+                { maxH: 1080, minH: 721,  label: "720p HD", refBitrate: 3000, defaultMb: 11.5 },
+                { maxH: 720,  minH: 481,  label: "480p HQ", refBitrate: 1500, defaultMb: 5.8 },
+                { maxH: 480,  minH: 0,    label: "360p Standard", refBitrate: 800, defaultMb: 3.2 }
             ];
             
             let availableOptions = [];
@@ -88,24 +88,25 @@ app.post('/api/fetch-info', (req, res) => {
                     validStreams.sort((a, b) => (b.tbr || 0) - (a.tbr || 0));
                     const bestStream = validStreams[0];
 
-                    // Actual Real Size Calculation
-                    let realBytes = 0;
-                    if (bestStream) {
-                        realBytes = bestStream.filesize || bestStream.filesize_approx || 0;
+                    // Priority 1: Real Stream Filesize
+                    let realBytes = bestStream ? (bestStream.filesize || bestStream.filesize_approx || 0) : 0;
+                    let sizeStr = formatBytes(realBytes);
+
+                    // Priority 2: Calculated Duration-based Size
+                    if (!sizeStr && duration > 0) {
+                        sizeStr = formatBytes((tier.refBitrate * 1000 * duration) / 8);
                     }
 
-                    let formattedSize = formatBytes(realBytes);
-                    if (!formattedSize && duration > 0) {
-                        formattedSize = formatBytes((tier.refBitrate * 1000 * duration) / 8);
+                    // Priority 3: Smart Resolution Fallback
+                    if (!sizeStr) {
+                        sizeStr = `${tier.defaultMb} MB`;
                     }
-
-                    let sizeLabel = formattedSize ? ` [~${formattedSize}]` : "";
 
                     const formatSelector = bestStream 
                         ? `bestvideo[format_id=${bestStream.format_id}]+bestaudio/bestvideo[height<=${tier.maxH}]+bestaudio`
                         : `bestvideo[height<=${tier.maxH}]+bestaudio/best`;
 
-                    availableOptions.push({ id: formatSelector, label: `${tier.label}${sizeLabel}`, disabled: false });
+                    availableOptions.push({ id: formatSelector, label: `${tier.label} [~${sizeStr}]`, disabled: false });
                 } else {
                     availableOptions.push({ id: "disabled", label: `${tier.label} - [Unavailable]`, disabled: true });
                 }
