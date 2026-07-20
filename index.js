@@ -73,7 +73,7 @@ app.get('/', (req, res) => {
                 <div id="previewCard" class="preview-card">
                     <div id="videoTitle" class="preview-title">Video Title</div>
                     <img id="videoThumb" src="" alt="Thumbnail">
-                    <label>Select Video Stream Quality</label>
+                    <label>Select Stream Quality & Exact Size</label>
                     <select id="qualityDropdown" class="quality-select"></select>
                     <button id="startDownloadBtn" class="btn-download">Download In Selected Quality</button>
                 </div>
@@ -120,7 +120,7 @@ app.get('/', (req, res) => {
                 
                 previewCard.style.display = 'none';
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Parsing original formats and sizes...";
+                statusPanel.innerHTML = "🛰️ <b>[Analyzing Stream]:</b> Fetching raw high-bitrate video streams...";
                 
                 try {
                     const response = await fetch('/api/fetch-info', {
@@ -164,7 +164,7 @@ app.get('/', (req, res) => {
                 const statusPanel = document.getElementById('download-status');
                 
                 statusPanel.style.display = 'block';
-                statusPanel.innerHTML = "💎 <b>[Raw Pipeline]:</b> Downloading exact selected format...";
+                statusPanel.innerHTML = "💎 <b>[Processing]:</b> Fetching full raw stream...";
                 
                 try {
                     const response = await fetch('/api/prepare-video', {
@@ -262,7 +262,7 @@ app.get('/', (req, res) => {
     `);
 });
 
-// --- ROUTE: METADATA FETCH ENGINE ---
+// --- METADATA FETCH ENGINE ---
 app.post('/api/fetch-info', (req, res) => {
     const { url, type } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
@@ -286,7 +286,6 @@ app.post('/api/fetch-info', (req, res) => {
 
             let formatsList = [];
             
-            // Top default option (Forces absolute original stream)
             formatsList.push({
                 id: "best",
                 label: "🌟 Absolute Highest Original Stream (Full Raw Quality)"
@@ -295,12 +294,10 @@ app.post('/api/fetch-info', (req, res) => {
             if (meta.formats && Array.isArray(meta.formats)) {
                 let seenResolutions = new Set();
                 
-                // Reverse to check best quality formats first
                 meta.formats.slice().reverse().forEach(f => {
                     if (f.vcodec !== 'none') {
                         let resName = f.height ? `${f.height}p` : (f.format_note || 'HQ');
                         
-                        // Avoid duplicates of same resolution
                         if (!seenResolutions.has(resName)) {
                             seenResolutions.add(resName);
                             
@@ -333,7 +330,7 @@ app.post('/api/fetch-info', (req, res) => {
     });
 });
 
-// --- ROUTE: VIDEO DOWNLOAD ENGINE ---
+// --- VIDEO PREPARE ENGINE ---
 app.post('/api/prepare-video', (req, res) => {
     const { url, formatId } = req.body;
     if (!url) return res.json({ success: false, message: "Invalid URL." });
@@ -341,7 +338,6 @@ app.post('/api/prepare-video', (req, res) => {
     const outputFilename = `video_${Date.now()}.%(ext)s`;
     const outputPath = path.join(TMP_DIR, outputFilename);
     
-    // Simple & Strict format flag matching
     let targetFormat = formatId || "best";
     if (targetFormat !== "best") {
         targetFormat = `${targetFormat}+bestaudio/best`;
@@ -354,7 +350,6 @@ app.post('/api/prepare-video', (req, res) => {
         const downloadedFile = files.find(f => f.startsWith(`video_${outputFilename.split('_')[1].split('.')[0]}`));
 
         if (err || !downloadedFile) {
-            // Direct force fallback to single best stream (12.5MB)
             const fallbackPath = path.join(TMP_DIR, `video_raw_${Date.now()}.mp4`);
             const fallbackCommand = `yt-dlp --no-check-certificates -f "best" "${url}" -o "${fallbackPath}"`;
             
@@ -370,7 +365,7 @@ app.post('/api/prepare-video', (req, res) => {
     });
 });
 
-// --- ROUTE: AUDIO DOWNLOAD ENGINE ---
+// --- AUDIO PREPARE ENGINE ---
 app.post('/api/prepare-audio', (req, res) => {
     const { url } = req.body;
     if (!url) return res.json({ success: false, message: "Invalid Audio URL." });
@@ -387,7 +382,7 @@ app.post('/api/prepare-audio', (req, res) => {
     });
 });
 
-// --- ROUTE: FILE DISPATCH ENGINE ---
+// --- FILE SERVE DISPATCH ---
 app.get('/api/chrome-popup', (req, res) => {
     const filename = req.query.file;
     if (!filename) return res.status(400).send("File missing.");
@@ -407,5 +402,9 @@ app.get('/api/chrome-popup', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(chalk.cyan(`Server running on port ${PORT}`));
+    if (chalk && chalk.cyan) {
+        console.log(chalk.cyan(`Server running on port ${PORT}`));
+    } else {
+        console.log(`Server running on port ${PORT}`);
+    }
 });
