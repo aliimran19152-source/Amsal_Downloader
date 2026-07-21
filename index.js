@@ -320,7 +320,7 @@ app.post('/api/fetch-info', async (req, res) => {
         }
     }
 
-    const command = `yt-dlp --dump-json --no-warnings --no-check-certificates ${requestCookiesFlag} --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" --extractor-args "youtube:player_client=android,web" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
+    const command = `yt-dlp --dump-json --no-warnings --no-check-certificates --impersonate chrome ${requestCookiesFlag} --extractor-args "youtube:player_client=mweb,android_vr" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 50 }, async (err, stdout, stderr) => {
         // Always clean up the per-request cookies file, regardless of outcome
@@ -461,7 +461,7 @@ app.post('/api/prepare-video', (req, res) => {
         targetFormat = `${targetFormat}+bestaudio/best`;
     }
 
-    const command = `yt-dlp -f "${targetFormat}" --merge-output-format mp4 --no-check-certificate ${requestCookiesFlag} --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" --extractor-args "youtube:player_client=android,web" "${url}" -o "${outputPath}"`;
+    const command = `yt-dlp --impersonate chrome -f "${targetFormat}" --merge-output-format mp4 --no-check-certificate ${requestCookiesFlag} --extractor-args "youtube:player_client=mweb,android_vr" "${url}" -o "${outputPath}"`;
 
     console.log("=== PREPARE-VIDEO START ===");
     console.log("Requested formatId:", formatId, "-> targetFormat:", targetFormat);
