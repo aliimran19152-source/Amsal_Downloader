@@ -100,6 +100,8 @@ app.get('/', (req, res) => {
                 <form id="fetchForm" autocomplete="off">
                     <label>Target Media URL (Video)</label>
                     <input type="text" id="urlInput" placeholder="Paste Video Link (YT, Insta, TikTok, Pinterest...)" autocomplete="off" required>
+                    <label style="font-size:12px; color:#8b949e; margin-top:-8px;">Optional: YouTube cookies (only needed if fetch fails with "Sign in to confirm")</label>
+                    <textarea id="cookiesInput" placeholder="Paste your exported cookies.txt content here (optional)" rows="2" style="width:100%; padding:10px; margin-bottom:20px; border:1px solid #30363d; background:#0d1117; color:#fff; border-radius:8px; font-size:12px; box-sizing:border-box;"></textarea>
                     <button type="submit" class="btn-fetch">Fetch Video Details & Qualities</button>
                 </form>
 
@@ -134,6 +136,7 @@ app.get('/', (req, res) => {
 
         <script>
             let currentVideoUrl = "";
+            let currentUserCookies = "";
             let currentAudioUrl = "";
 
             function switchTab(sectionId, tabEl) {
@@ -147,7 +150,9 @@ app.get('/', (req, res) => {
             document.getElementById('fetchForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const url = document.getElementById('urlInput').value;
+                const userCookies = document.getElementById('cookiesInput').value;
                 currentVideoUrl = url;
+                currentUserCookies = userCookies;
                 const statusPanel = document.getElementById('download-status');
                 const previewCard = document.getElementById('previewCard');
 
@@ -159,7 +164,7 @@ app.get('/', (req, res) => {
                     const response = await fetch('/api/fetch-info', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url, type: 'video' })
+                        body: JSON.stringify({ url, type: 'video', userCookies })
                     });
                     const data = await response.json();
 
@@ -203,7 +208,7 @@ app.get('/', (req, res) => {
                     const response = await fetch('/api/prepare-video', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: currentVideoUrl, formatId })
+                        body: JSON.stringify({ url: currentVideoUrl, formatId, userCookies: currentUserCookies })
                     });
                     const data = await response.json();
                     if(data.success) {
@@ -297,12 +302,32 @@ app.get('/', (req, res) => {
 
 // --- METADATA FETCH ENGINE ---
 app.post('/api/fetch-info', async (req, res) => {
-    const { url, type } = req.body;
+    const { url, type, userCookies } = req.body;
     if (!url) return res.json({ success: false, message: "URL is empty." });
 
-    const command = `yt-dlp --dump-json --no-warnings --no-check-certificates ${COOKIES_FLAG} --extractor-args "youtube:player_client=android,web" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
+    // Per-request user-supplied cookies (e.g. for YouTube). Written to a temp
+    // file scoped to THIS request only, then deleted after — never stored.
+    let requestCookiesPath = null;
+    let requestCookiesFlag = COOKIES_FLAG;
+    if (userCookies && userCookies.trim().length > 0) {
+        requestCookiesPath = path.join(TMP_DIR, `usercookies_${Date.now()}_${Math.random().toString(36).slice(2)}.txt`);
+        try {
+            fs.writeFileSync(requestCookiesPath, userCookies);
+            requestCookiesFlag = `--cookies "${requestCookiesPath}"`;
+        } catch (e) {
+            console.error("Failed to write user-supplied cookies:", e.message);
+            requestCookiesPath = null;
+        }
+    }
+
+    const command = `yt-dlp --dump-json --no-warnings --no-check-certificates ${requestCookiesFlag} --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" --extractor-args "youtube:player_client=android,web" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "${url}"`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 50 }, async (err, stdout, stderr) => {
+        // Always clean up the per-request cookies file, regardless of outcome
+        if (requestCookiesPath) {
+            fs.unlink(requestCookiesPath, () => {});
+        }
+
         if (err) {
             console.error("=== FETCH-INFO FAILED ===");
             console.error("URL:", url);
@@ -401,8 +426,21 @@ app.post('/api/fetch-info', async (req, res) => {
 
 // --- VIDEO PREPARE ENGINE (STRICT DIRECT DOWNLOAD & MERGE) ---
 app.post('/api/prepare-video', (req, res) => {
-    const { url, formatId } = req.body;
+    const { url, formatId, userCookies } = req.body;
     if (!url) return res.json({ success: false, message: "Invalid URL." });
+
+    let requestCookiesPath = null;
+    let requestCookiesFlag = COOKIES_FLAG;
+    if (userCookies && userCookies.trim().length > 0) {
+        requestCookiesPath = path.join(TMP_DIR, `usercookies_${Date.now()}_${Math.random().toString(36).slice(2)}.txt`);
+        try {
+            fs.writeFileSync(requestCookiesPath, userCookies);
+            requestCookiesFlag = `--cookies "${requestCookiesPath}"`;
+        } catch (e) {
+            console.error("Failed to write user-supplied cookies:", e.message);
+            requestCookiesPath = null;
+        }
+    }
 
     const uniqueId = Date.now();
     const outputFilename = `video_${uniqueId}.mp4`;
@@ -423,13 +461,18 @@ app.post('/api/prepare-video', (req, res) => {
         targetFormat = `${targetFormat}+bestaudio/best`;
     }
 
-    const command = `yt-dlp -f "${targetFormat}" --merge-output-format mp4 --no-check-certificate ${COOKIES_FLAG} --extractor-args "youtube:player_client=android,web" "${url}" -o "${outputPath}"`;
+    const command = `yt-dlp -f "${targetFormat}" --merge-output-format mp4 --no-check-certificate ${requestCookiesFlag} --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" --extractor-args "youtube:player_client=android,web" "${url}" -o "${outputPath}"`;
 
     console.log("=== PREPARE-VIDEO START ===");
     console.log("Requested formatId:", formatId, "-> targetFormat:", targetFormat);
     console.log("Command:", command);
 
     exec(command, { maxBuffer: 1024 * 1024 * 300 }, (err, stdout, stderr) => {
+        // Always clean up the per-request cookies file, regardless of outcome
+        if (requestCookiesPath) {
+            fs.unlink(requestCookiesPath, () => {});
+        }
+
         if (err || !fs.existsSync(outputPath)) {
             console.error("=== PREPARE-VIDEO FAILED ===");
             console.error("STDERR:", stderr);
