@@ -364,21 +364,19 @@ app.post('/api/fetch-info', async (req, res) => {
             // Find the actual highest-tbr format from our parsed list and use its
             // real format_id, instead of the unreliable generic "bestvideo" keyword
             // (yt-dlp's auto-picker can choose a tiny format when tbr/filesize are null)
-            let highestTbrFormat = null;
-            let highestTbr = -1;
+            let highestHeight = 0;
             if (meta.formats && Array.isArray(meta.formats)) {
                 meta.formats.forEach(f => {
-                    if (f.vcodec !== 'none' && f.tbr && f.tbr > highestTbr) {
-                        highestTbr = f.tbr;
-                        highestTbrFormat = f.format_id;
+                    if (f.vcodec !== 'none' && f.height && f.height > highestHeight) {
+                        highestHeight = f.height;
                     }
                 });
             }
 
-            if (highestTbrFormat) {
+            if (highestHeight > 0) {
                 formatsList.unshift({
-                    id: highestTbrFormat,
-                    label: `🌟 Absolute Highest Combined Stream (${highestTbr.toFixed(0)}kbps, verified)`
+                    id: `height:${highestHeight}`,
+                    label: `🌟 Absolute Highest Combined Stream (${highestHeight}p, verified)`
                 });
             } else {
                 formatsList.unshift({
@@ -394,109 +392,4 @@ app.post('/api/fetch-info', async (req, res) => {
                 formats: formatsList
             });
 
-        } catch (e) {
-            console.error("=== FETCH-INFO PARSE ERROR ===", e.message);
-            res.json({ success: false, message: "Engine compilation structural error." });
-        }
-    });
-});
-
-// --- VIDEO PREPARE ENGINE (STRICT DIRECT DOWNLOAD & MERGE) ---
-app.post('/api/prepare-video', (req, res) => {
-    const { url, formatId } = req.body;
-    if (!url) return res.json({ success: false, message: "Invalid URL." });
-
-    const uniqueId = Date.now();
-    const outputFilename = `video_${uniqueId}.mp4`;
-    const outputPath = path.join(TMP_DIR, outputFilename);
-
-    // IMPORTANT: Instagram's format_ids are session/token-based and expire quickly.
-    // By the time the user clicks Download, a NEW yt-dlp extraction happens with
-    // DIFFERENT format_ids than what fetch-info showed. Using the old exact ID
-    // silently fails and falls back to a generic low-quality "best".
-    // Fix: use height-based selectors which match against whatever formats
-    // are live at download time, instead of a specific (likely stale) ID.
-    let targetFormat = formatId || "best";
-    if (targetFormat.startsWith("height:")) {
-        const h = targetFormat.split(":")[1];
-        targetFormat = `bestvideo[height<=${h}]+bestaudio/best`;
-    } else if (targetFormat !== "best" && targetFormat !== "bestvideo+bestaudio/best") {
-        // Legacy exact-ID path kept as fallback, but prefer height selectors going forward
-        targetFormat = `${targetFormat}+bestaudio/best`;
-    }
-
-    const command = `yt-dlp -f "${targetFormat}" --merge-output-format mp4 --no-check-certificate ${COOKIES_FLAG} "${url}" -o "${outputPath}"`;
-
-    console.log("=== PREPARE-VIDEO START ===");
-    console.log("Requested formatId:", formatId, "-> targetFormat:", targetFormat);
-    console.log("Command:", command);
-
-    exec(command, { maxBuffer: 1024 * 1024 * 300 }, (err, stdout, stderr) => {
-        if (err || !fs.existsSync(outputPath)) {
-            console.error("=== PREPARE-VIDEO FAILED ===");
-            console.error("STDERR:", stderr);
-            console.error("STDOUT:", stdout);
-            return res.json({
-                success: false,
-                message: "Download failed. Make sure 'ffmpeg' is installed in Termux (`pkg install ffmpeg`). Error details: " + (err ? err.message : 'File missing')
-            });
-        }
-
-        // Log actual downloaded file size + which format yt-dlp actually picked
-        const stats = fs.statSync(outputPath);
-        console.log(`PREPARE-VIDEO SUCCESS: ${outputFilename} -> ${(stats.size / (1024*1024)).toFixed(2)} MB`);
-        console.log("yt-dlp STDOUT tail:", stdout ? stdout.slice(-800) : "(empty)");
-
-        // Check the ACTUAL duration of the downloaded file using ffprobe
-        exec(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${outputPath}"`, (probeErr, probeOut) => {
-            if (probeErr) {
-                console.error("FFPROBE ERROR:", probeErr.message);
-            } else {
-                console.log(`ACTUAL DOWNLOADED FILE DURATION: ${probeOut.trim()} seconds`);
-            }
-            res.json({ success: true, filename: outputFilename });
-        });
-    });
-});
-
-// --- AUDIO PREPARE ENGINE ---
-app.post('/api/prepare-audio', (req, res) => {
-    const { url } = req.body;
-    if (!url) return res.json({ success: false, message: "Invalid Audio URL." });
-
-    const outputFilename = `audio_${Date.now()}.mp3`;
-    const outputPath = path.join(TMP_DIR, outputFilename);
-    const command = `yt-dlp --no-check-certificates ${COOKIES_FLAG} --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -x --audio-format mp3 "${url}" -o "${outputPath}"`;
-
-    exec(command, { maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
-        if (err || !fs.existsSync(outputPath)) {
-            console.error("=== PREPARE-AUDIO FAILED ===");
-            console.error("STDERR:", stderr);
-            return res.json({ success: false, message: "Audio extraction failed." });
-        }
-        res.json({ success: true, filename: outputFilename });
-    });
-});
-
-// --- FILE SERVE DISPATCH ---
-app.get('/api/chrome-popup', (req, res) => {
-    const filename = req.query.file;
-    if (!filename) return res.status(400).send("File missing.");
-
-    const safeFilename = path.basename(filename);
-    const filePath = path.join(TMP_DIR, safeFilename);
-
-    if (fs.existsSync(filePath)) {
-        res.download(filePath, safeFilename, (err) => {
-            if (!err) {
-                fs.unlink(filePath, () => {});
-            }
-        });
-    } else {
-        res.status(404).send("File not found or expired.");
-    }
-});
-
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+        } c
